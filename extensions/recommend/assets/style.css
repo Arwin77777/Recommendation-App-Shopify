@@ -18,6 +18,8 @@
 
 /* Product Card Styling */
 .product-card {
+  width: 80%;
+  margin-left: 10%;
   background-color: #ffffff;
   border-radius: 8px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
@@ -116,9 +118,9 @@
 
 /* Style for the variant select dropdown */
 .variant-select {
-  width: 100%;
-  padding: 10px;
-  font-size: 16px;
+  width: 50%;
+  padding: 5px;
+  font-size: 10px;
   border-radius: 4px;
   border: 1px solid #ddd;
   margin-bottom: 15px;
@@ -135,7 +137,7 @@
 /* Style for the quantity input field */
 .quantity {
   width: 30px;
-  height: 30px;
+  height: 20px;
   text-align: center;
   font-size: 10px;
   border: 1px solid #ddd;

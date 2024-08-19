@@ -24,7 +24,7 @@ import {
   ChevronLeftIcon
 } from '@shopify/polaris-icons';
 import shopify from "./app/shopify.server";
-import { Modal } from '@shopify/app-bridge-react';
+import { Modal, useAppBridge, TitleBar } from '@shopify/app-bridge-react';
 
 export async function loader({ request }) {
   const { admin } = await shopify.authenticate.admin(request);
@@ -113,12 +113,12 @@ function MultiselectTagComboboxExample() {
   const actionData = useActionData();
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
-
+  const shopify = useAppBridge();
   const submit = useSubmit();
 
   useEffect(() => {
     if (actionData && actionData.success) {
-      navigate('../new');
+      navigate('../');
     } else if (actionData && actionData.error) {
       setError(actionData.error);
     }
@@ -428,16 +428,16 @@ function MultiselectTagComboboxExample() {
   const handleAllProducts = () => {
     setSelectedProducts(new Map(shopifyProducts.map((product) => [product.title, product.id])));
   }
-  const [selectedOption, setSelectedOption] = useState('specific');
-  const [isSpecific, setIsSpecific] = useState(false);
+  const [selectedOption, setSelectedOption] = useState('');
+  const [isSpecific, setIsSpecific] = useState('');
   const handleOptionChange = (value) => {
     setSelectedOption(value);
     if (value === 'all') {
-      setIsSpecific(false);
+      setIsSpecific('all');
       handleAllProducts();
     } else {
       setSelectedProducts(new Map());
-      setIsSpecific(true);
+      setIsSpecific('specific');
 
 
       // Handle logic for 'Specific Products' if necessary
@@ -445,7 +445,7 @@ function MultiselectTagComboboxExample() {
   };
 
   return (
-    <Page backAction={{ content: "Offer", url: '/app/new' }} title='Add Recommendation'
+    <Page backAction={{ content: "Offer", url: '/app' }} title='Add Offer'
       secondaryActions={[
         {
           content: "Save",
@@ -493,20 +493,21 @@ function MultiselectTagComboboxExample() {
                 checked={selectedOption === 'all'}
                 onChange={() => handleOptionChange('all')}
               />
-              </div>
-              <div style={{ margin: '10px 0' }}>
+            </div>
+            <div style={{ margin: '10px 0' }}>
               <RadioButton
                 label="Specific Products"
                 checked={selectedOption === 'specific'}
                 onChange={() => handleOptionChange('specific')}
               />
             </div>
-            {isSpecific ?
+            {isSpecific==='specific' ?
               (<div>
-                <Button onClick={() => setModalOpen(true)}>Choose trigger products</Button>
-                <p style={{color:'gray',marginTop:'10px'}}>*The offer will be applied for selected products</p>
-              </div>):
-              (<p style={{color:'gray',marginLeft:'10px'}}>*The offer will be applied for all products</p>)
+                <Button onClick={() => shopify.modal.show('my-modal')}>Choose Products</Button>
+                <p style={{ color: 'gray', marginTop: '10px' }}>*The offer will be applied for selected products</p>
+              </div>) : isSpecific==='all' ?
+              (<p style={{ color: 'gray', marginLeft: '10px' }}>*The offer will be applied for all products</p>)
+              :(<p></p>)
             }
 
             {/* {verticalContentMarkup} */}
@@ -537,34 +538,41 @@ function MultiselectTagComboboxExample() {
             </Combobox>
             {recommendationVerticalContentMarkup}
             {/* </Card> */}
+
+
           </Card>
         </Layout.Section>
+        <p style={{ visibility: 'hidden' }}>Lorem ipsum dolor sit, amet consectetur adipisicing elit. Quos architecto cum aliquam minus at. Quasi fugiat cum at consectetur porro officiis, dolores dolorem provident illum impedit possimus magnam eligendi illo.</p>
       </Layout>
 
-
-
-
-      <Modal title="Add Product" id="confirmation-modal" open={modalOpen} onClose={() => setModalOpen(false)}>
+      <Modal id="my-modal">
         <div style={{ margin: '20px' }}>
           <Combobox
             allowMultiple
             activator={
               <Combobox.TextField
                 autoComplete="off"
-                label="Search products"
+                label="Search for products"
                 labelHidden
                 value={value}
                 suggestion={suggestion}
-                placeholder="Search products"
                 onChange={setValue}
+                placeholder="Search for Trigger products"
               />
             }
           >
+            {/* selected={Array.from(selectedProducts.keys())}
+            onSelect={updateSelection} */}
           </Combobox>
-          <div>{listboxMarkup}</div>
+            {listboxMarkup}
+            <div style={{marginTop:'10px'}}>
+          <Button  onClick={() => shopify.modal.hide('my-modal')}>Add</Button>
+          </div>
         </div>
+          {/* {verticalContentMarkup} */}
+        <TitleBar title='Choose Products'>
+        </TitleBar>
       </Modal>
-
 
 
     </Page>

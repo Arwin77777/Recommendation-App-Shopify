@@ -24,7 +24,7 @@ export default function App() {
           Home
         </Link> */}
         {/* <Link to="/app/additional">Additional page</Link> */}
-        <Link to="/app/new">Offers</Link>
+        {/* <Link to="/app/new">Offers</Link> */}
       </NavMenu>
       <Outlet />
     </AppProvider>

@@ -8,7 +8,7 @@ const client = new DynamoDBClient({
 
  const table = async () => {
   const params = {
-    TableName: 'ShopifyProducts',
+    TableName: 'UpsellOffers',
     KeySchema: [
       { AttributeName : 'myShopifyDomain', KeyType: 'HASH'},
       { AttributeName: 'offerId', KeyType: 'SORT' }  

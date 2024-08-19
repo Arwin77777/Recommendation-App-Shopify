@@ -1,331 +1,195 @@
-import { useEffect } from "react";
-import { json } from "@remix-run/node";
-import { useFetcher } from "@remix-run/react";
+import React, { useState, useEffect } from 'react';
 import {
-  Page,
-  Layout,
+  IndexTable,
+  LegacyCard,
+  useIndexResourceState,
   Text,
-  Card,
   Button,
-  BlockStack,
-  Box,
-  List,
+  Page,
   Link,
-  InlineStack,
-} from "@shopify/polaris";
-import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
-import { authenticate } from "../shopify.server";
+} from '@shopify/polaris';
+import { useLoaderData, useNavigate } from '@remix-run/react';
+import { DeleteIcon, EditIcon } from '@shopify/polaris-icons';
+import { fetchProducts } from '../server/getItems';
 
-export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+// Convert DynamoDB format to plain JS objects
+const convertDynamoDBData = (data) => {
+  console.log("data before conversion", data)
+  return data.map(item => ({
+    offerId: item.offerId.S,
+    title: item.title.S,
+    priority: Number(item.priority.N),
+    isEnabled: item.isEnabled.S === 'true',
+    recommendedProductIds: item.recommendedProductIds.L.map(id => id.S),
+    triggerProductIds: item.triggerProductIds.L.map(id => id.S),
+  }));
 
-  return null;
+  // return data;
 };
 
-export const action = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($input: ProductInput!) {
-        productCreate(input: $input) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        input: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-  const variantId =
-    responseJson.data.productCreate.product.variants.edges[0].node.id;
-  const variantResponse = await admin.graphql(
-    `#graphql
-      mutation shopifyRemixTemplateUpdateVariant($input: ProductVariantInput!) {
-        productVariantUpdate(input: $input) {
-          productVariant {
-            id
-            price
-            barcode
-            createdAt
-          }
-        }
-      }`,
-    {
-      variables: {
-        input: {
-          id: variantId,
-          price: Math.random() * 100,
-        },
-      },
-    },
-  );
-  const variantResponseJson = await variantResponse.json();
+// Loader function to fetch initial data
+export async function loader() {
+  try {
+    const response = await fetchProducts();
+    return { products: response.data };
+  } catch (err) {
+    console.log(err);
+    return err;
+  }
+}
 
-  return json({
-    product: responseJson.data.productCreate.product,
-    variant: variantResponseJson.data.productVariantUpdate.productVariant,
-  });
-};
+// Table component with data management
+const MyIndexTable = ({ data, setData }) => {
+  const navigate = useNavigate();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [loader,setLoader] = useState(false);
 
-export default function Index() {
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-  const productId = fetcher.data?.product?.id.replace(
-    "gid://shopify/Product/",
-    "",
-  );
+  const resourceName = {
+    singular: 'product',
+    plural: 'products',
+  };
 
-  useEffect(() => {
-    if (productId) {
-      shopify.toast.show("Product created");
+  const { selectedResources, allResourcesSelected, handleSelectionChange } =
+    useIndexResourceState(data);
+
+  const handleEdit = (offerId) => {
+    navigate(`../recommendation/${offerId}`);
+  };
+
+  const handleDeleteSelected = async () => {
+    setIsDeleting(true);
+    try {
+      await Promise.all(
+        selectedResources.map((offerId) =>
+          fetch(`http://localhost:3004/recommendation?offerId=${offerId}`, {
+            method: 'DELETE',
+          })
+        )
+      );
+      await refreshData();
+      setLoader(false);
+      // handleSelectionChange([]);
+    } catch (err) {
+      console.log(err);
+    } finally {
+      setIsDeleting(false);
     }
-  }, [productId, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  };
+
+  const refreshData = async () => {
+    try {
+      const response = await fetch("http://localhost:3004/offers");
+      const rawOffers = await response.json();
+      console.log("raw offers", rawOffers);
+      const offers = convertDynamoDBData(rawOffers);
+      setData(offers);
+      handleSelectionChange([]);
+      setLoader(true);
+      window.location.reload();
+    } catch (err) {
+      console.log(err);
+    }
+  };
+  const rowMarkup = data.map(
+    ({ offerId, title, priority, isEnabled }, index) => (
+      <IndexTable.Row
+        id={offerId}
+        key={offerId}
+        selected={selectedResources.includes(offerId)}
+        position={index}
+      >
+        <IndexTable.Cell>
+          <Text variant="bodyMd" fontWeight="bold" as="span">
+            {title}
+          </Text>
+        </IndexTable.Cell>
+        <IndexTable.Cell>{priority}</IndexTable.Cell>
+        <IndexTable.Cell>
+          {isEnabled ? 'Active' : 'Inactive'}
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <Link
+              url={`./recommendation/${offerId}`}
+              onClick={(event) => {
+                event.stopPropagation(); 
+                console.log("Edited ", offerId);
+              }}
+            >
+              <Button icon={EditIcon} />
+            </Link>
+            <Button icon={DeleteIcon} onClick={() => handleDeleteSelected()} destructive  />
+          </div>
+        </IndexTable.Cell>
+      </IndexTable.Row>
+    )
+  );
 
   return (
-    <Page>
-      <TitleBar title="Remix app template">
-        <button variant="primary" onClick={generateProduct}>
-          Generate a product
-        </button>
-      </TitleBar>
-      <BlockStack gap="500">
-        <Layout>
-          <Layout.Section>
-            <Card>
-              <BlockStack gap="500">
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Congrats on creating a new Shopify app 🎉
-                  </Text>
-                  <Text variant="bodyMd" as="p">
-                    This embedded app template uses{" "}
-                    <Link
-                      url="https://shopify.dev/docs/apps/tools/app-bridge"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      App Bridge
-                    </Link>{" "}
-                    interface examples like an{" "}
-                    <Link url="/app/additional" removeUnderline>
-                      additional page in the app nav
-                    </Link>
-                    , as well as an{" "}
-                    <Link
-                      url="https://shopify.dev/docs/api/admin-graphql"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      Admin GraphQL
-                    </Link>{" "}
-                    mutation demo, to provide a starting point for app
-                    development.
-                  </Text>
-                </BlockStack>
-                <BlockStack gap="200">
-                  <Text as="h3" variant="headingMd">
-                    Get started with products
-                  </Text>
-                  <Text as="p" variant="bodyMd">
-                    Generate a product with GraphQL and get the JSON output for
-                    that product. Learn more about the{" "}
-                    <Link
-                      url="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-                      target="_blank"
-                      removeUnderline
-                    >
-                      productCreate
-                    </Link>{" "}
-                    mutation in our API references.
-                  </Text>
-                </BlockStack>
-                <InlineStack gap="300">
-                  <Button loading={isLoading} onClick={generateProduct}>
-                    Generate a product
-                  </Button>
-                  {fetcher.data?.product && (
-                    <Button
-                      url={`shopify:admin/products/${productId}`}
-                      target="_blank"
-                      variant="plain"
-                    >
-                      View product
-                    </Button>
-                  )}
-                </InlineStack>
-                {fetcher.data?.product && (
-                  <>
-                    <Text as="h3" variant="headingMd">
-                      {" "}
-                      productCreate mutation
-                    </Text>
-                    <Box
-                      padding="400"
-                      background="bg-surface-active"
-                      borderWidth="025"
-                      borderRadius="200"
-                      borderColor="border"
-                      overflowX="scroll"
-                    >
-                      <pre style={{ margin: 0 }}>
-                        <code>
-                          {JSON.stringify(fetcher.data.product, null, 2)}
-                        </code>
-                      </pre>
-                    </Box>
-                    <Text as="h3" variant="headingMd">
-                      {" "}
-                      productVariantUpdate mutation
-                    </Text>
-                    <Box
-                      padding="400"
-                      background="bg-surface-active"
-                      borderWidth="025"
-                      borderRadius="200"
-                      borderColor="border"
-                      overflowX="scroll"
-                    >
-                      <pre style={{ margin: 0 }}>
-                        <code>
-                          {JSON.stringify(fetcher.data.variant, null, 2)}
-                        </code>
-                      </pre>
-                    </Box>
-                  </>
-                )}
-              </BlockStack>
-            </Card>
-          </Layout.Section>
-          <Layout.Section variant="oneThird">
-            <BlockStack gap="500">
-              <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    App template specs
-                  </Text>
-                  <BlockStack gap="200">
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Framework
-                      </Text>
-                      <Link
-                        url="https://remix.run"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        Remix
-                      </Link>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Database
-                      </Text>
-                      <Link
-                        url="https://www.prisma.io/"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        Prisma
-                      </Link>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        Interface
-                      </Text>
-                      <span>
-                        <Link
-                          url="https://polaris.shopify.com"
-                          target="_blank"
-                          removeUnderline
-                        >
-                          Polaris
-                        </Link>
-                        {", "}
-                        <Link
-                          url="https://shopify.dev/docs/apps/tools/app-bridge"
-                          target="_blank"
-                          removeUnderline
-                        >
-                          App Bridge
-                        </Link>
-                      </span>
-                    </InlineStack>
-                    <InlineStack align="space-between">
-                      <Text as="span" variant="bodyMd">
-                        API
-                      </Text>
-                      <Link
-                        url="https://shopify.dev/docs/api/admin-graphql"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        GraphQL API
-                      </Link>
-                    </InlineStack>
-                  </BlockStack>
-                </BlockStack>
-              </Card>
-              <Card>
-                <BlockStack gap="200">
-                  <Text as="h2" variant="headingMd">
-                    Next steps
-                  </Text>
-                  <List>
-                    <List.Item>
-                      Build an{" "}
-                      <Link
-                        url="https://shopify.dev/docs/apps/getting-started/build-app-example"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        {" "}
-                        example app
-                      </Link>{" "}
-                      to get started
-                    </List.Item>
-                    <List.Item>
-                      Explore Shopify’s API with{" "}
-                      <Link
-                        url="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-                        target="_blank"
-                        removeUnderline
-                      >
-                        GraphiQL
-                      </Link>
-                    </List.Item>
-                  </List>
-                </BlockStack>
-              </Card>
-            </BlockStack>
-          </Layout.Section>
-        </Layout>
-      </BlockStack>
-    </Page>
+    <div>
+      {/* {loader ? ( */}
+    <LegacyCard>
+    <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+      <IndexTable
+        resourceName={resourceName}
+        itemCount={data.length}
+        selectedItemsCount={allResourcesSelected ? 'All' : selectedResources.length}
+        onSelectionChange={handleSelectionChange}
+        headings={[
+          { title: 'Title' },
+          { title: 'Priority' },
+          { title: 'Status' },
+          { title: 'Actions' },
+        ]}
+      >
+        {rowMarkup}
+      </IndexTable>
+    </div>
+    {selectedResources.length > 1 && (
+      <div style={{ padding: '16px' }}>
+        <Button onClick={handleDeleteSelected} destructive loading={isDeleting}>
+          Delete Selected
+        </Button>
+      </div>
+    )}
+  </LegacyCard>
+  {/* ):(<p>loading</p>)} */}
+  </div>
+  
+  );
+};
+
+export default function ExamplePage() {
+  const { products } = useLoaderData();
+  const [data, setData] = useState(products);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch("http://localhost:3004/offers");
+        if (response.data) {
+          setData(convertDynamoDBData(response.data));
+        }
+      } catch (err) {
+        console.log(err);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  return (
+    <Page
+      title="Upsell Offers"
+      secondaryActions={[
+        {
+          content: 'Add an Offer',
+          onAction: () => navigate('/app/offer'),
+        },
+      ]}
+    >
+      <MyIndexTable data={data} setData={setData} />
+      </Page>
   );
 }

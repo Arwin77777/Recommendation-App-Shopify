@@ -2,7 +2,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     const productsId = document.getElementById("productsId");
     const c = document.getElementById('currency');
     const symbol = c.value;
-    console.log("symbol",symbol)
+
     if (productsId) {
         const cartItems = await getCart();
         console.log("Recommended items:", cartItems);
@@ -11,48 +11,45 @@ document.addEventListener("DOMContentLoaded", async function () {
                 <div id="carouselExampleControls" class="carousel slide carousel-fade" data-ride="carousel">
                     <div class="carousel-inner">
                         ${cartItems.map((item, index) => {
-                console.log(item, "--->", index);
-                const imageSrc = item.image?.src || 'default-image.jpg';
-                const description = item.body_html || '';
-                const price = item.variants && item.variants.length > 0 ? item.variants[0].price : 'Price not available';
-                
-                
-                // Add "active" class to the first carousel item
-                const activeClass = index === 0 ? 'active' : '';
-                return `
+                            const imageSrc = item.image?.src || 'default-image.jpg';
+                            const description = item.body_html || '';
+                            const price = item.variants && item.variants.length > 0 ? item.variants[0].price : 'Price not available';
+
+                            // Add "active" class to the first carousel item
+                            const activeClass = index === 0 ? 'active' : '';
+                            return `
                                 <div class="carousel-item ${activeClass}">
                                     <div class="product-card">
                                         <img src="${imageSrc}" alt="${item.title}" class="product-image" />
                                         <h2 class="product-title">${item.title}</h2>
                                         <p class="product-description">${description}</p>
-                                        <p class="product-price">${symbol.slice(0,1)}${price}</p>
+                                        <p class="product-price">${symbol.slice(0, 1)}${price}</p>
                                         ${item.variants.filter(variant => {
                                             return variant.inventory_policy === "continue" || variant.inventory_quantity > 0;
                                         }).length > 1 ? `
-                                        <select class="variant-select">
+                                        <select class="variant-select" data-price-element="product-price-${index}">
                                             ${item.variants.filter(variant => {
-                                                        return variant.inventory_policy === "continue" || variant.inventory_quantity > 0;
-                                                    }).map(variant => {
-                                                        return `<option id="options" value="${variant.id}">${variant.title}</option>`;
-                                                    }).join('')}
+                                                return variant.inventory_policy === "continue" || variant.inventory_quantity > 0;
+                                            }).map(variant => {
+                                                return `<option value="${variant.id}" data-price="${variant.price}">${variant.title}</option>`;
+                                            }).join('')}
                                         </select>
-                            ` : `
-                            <span>${item.variants[0].title}</span>
-                        `}
-                                         <div class="quantity-container">
-                                         <button class="decreament">-</button>
-                                         <input class="quantity" id="product-quantity" value="1" readonly="readonly"/>
-                                         <button class="increament">+</button>
+                                        ` : `
+                                        <span>Variant : ${item.variants[0].title}</span>
+                                        `}
+                                        <div class="quantity-container">
+                                            <button class="decreament">-</button>
+                                            <input class="quantity" id="product-quantity" value="1" readonly="readonly"/>
+                                            <button class="increament">+</button>
                                         </div>
                                         <div class='buttons'>
-
                                             <button class="view-button" data-handle="${item.handle}">View</button>
                                             <button class="add-to-cart-button" data-product-id="${item.variants[0].id}">Add to Cart</button>
                                         </div>
                                     </div>
                                 </div>
                             `;
-            }).join('')}
+                        }).join('')}
                     </div>
                     <a class="carousel-control-prev" href="#carouselExampleControls" role="button" data-slide="prev">
                         <span class="carousel-control-prev-icon" aria-hidden="true"></span>
@@ -72,29 +69,34 @@ document.addEventListener("DOMContentLoaded", async function () {
                     window.location.href = `/products/${handle}`;
                 });
             });
-            let id='';
+
+            let id = '';
             document.querySelectorAll('.variant-select').forEach(selectElement => {
-                selectElement.addEventListener('change', function () {
+                selectElement.addEventListener('change', async function () {
                     const selectedVariantId = this.value;
+                    const priceElementId = this.getAttribute('data-price-element');
+                    const selectedOption = this.options[this.selectedIndex];
+                    const selectedPrice = selectedOption.getAttribute('data-price');
+                    
                     console.log('Selected variant ID:', selectedVariantId);
-                    id=selectedVariantId;
-                    // You can now use the selectedVariantId to update the cart, display information, etc.
+                    // const price = document.querySelector('.product-price').value;
+                    const price = await findPrice(selectedVariantId);
+                    console.log(price);
+                    price.innerHTML = `${symbol.slice(0, 1)}${"10"}`;
+                    id = selectedVariantId;
+                    // const priceElement = document.querySelector(`.${priceElementId}`);
+                    // priceElement.textContent = `${symbol.slice(0, 1)}${selectedPrice}`;
                 });
             });
-
 
             const quantityInput = document.getElementById("product-quantity");
             const incrementButton = document.querySelector('.increament');
             const decrementButton = document.querySelector('.decreament');
 
             incrementButton.addEventListener('click', function () {
-                console.log(quantityInput.value);
                 let currentValue = parseInt(quantityInput.value, 10);
-                console.log(currentValue);
-                // console.log(id);
                 quantityInput.value = currentValue + 1;
             });
-
 
             decrementButton.addEventListener('click', function () {
                 let currentValue = parseInt(quantityInput.value, 10);
@@ -102,13 +104,31 @@ document.addEventListener("DOMContentLoaded", async function () {
                     quantityInput.value = currentValue - 1;
                 }
             });
-            ;
+
+            async function findPrice(id){
+                console.log(id);
+                const details = await fetch(`/admin/api/2023-10/variants/${id}.json`,{
+                    method:'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Shopify-Access-Token':""
+                    }
+                });
+                console.log("this is the variant details",details.variant.price);
+                if(details.ok)
+                {
+                    console.log("this is the details",details);
+                    return details.variant.price;
+                }
+                else
+                    return details;
+            }
 
             document.querySelectorAll('.add-to-cart-button').forEach(button => {
                 button.addEventListener('click', function () {
                     const productId = this.getAttribute('data-product-id');
-                    const quantity = document.getElementById("product-quantity");
-                    addToCart(id>0?id:productId, quantity.value);
+                    const quantity = document.getElementById("product-quantity").value;
+                    addToCart(id ? id : productId, quantity);
                 });
             });
         } else {
@@ -116,6 +136,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
     }
 });
+
 
 // Function to add a product to the cart
 async function addToCart(id, quantity) {
@@ -132,6 +153,7 @@ async function addToCart(id, quantity) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-Shopify-Access-Token':""
             },
             body: JSON.stringify(formData)
         });
@@ -139,6 +161,7 @@ async function addToCart(id, quantity) {
         console.log("Response:", result);
         if (response.ok) {
             console.log("Successfully added to cart:", result);
+            window.location.reload();
             return result;
         }
     } catch (error) {
@@ -209,6 +232,7 @@ const fetchProductById = async (productUrl) => {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',
+            'X-Shopify-Access-Token':""
         },
     });
 

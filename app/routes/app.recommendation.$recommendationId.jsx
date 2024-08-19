@@ -2,16 +2,18 @@ import { json } from '@remix-run/node';
 import shopify from "./app/shopify.server";
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLoaderData, useSubmit, useActionData, useParams } from '@remix-run/react';
-import { Page, Card, Form, FormLayout, TextField, Button, Select, Layout, Text, Label, Tag } from '@shopify/polaris';
+import { Page, Card, Form, FormLayout, TextField, Button, Select, Layout, Text, Label, Tag, RadioButton } from '@shopify/polaris';
 import MultiAutoCombobox from './combobox';
-import { Modal } from '@shopify/app-bridge-react';
+import { Modal, TitleBar, useAppBridge } from '@shopify/app-bridge-react';
 
 
 
 
 
 export async function loader({ params, request }) {
+  console.log("In loader");
   const { recommendationId } = params;
+  console.log("In loader",recommendationId);
 
   try {
     const { admin } = await shopify.authenticate.admin(request);
@@ -101,6 +103,33 @@ export default function RecommendationDetails() {
   const submit = useSubmit();
   const navigate = useNavigate();
   const actionData = useActionData();
+  const shopify = useAppBridge();
+  const [selectedOption, setSelectedOption] = useState('');
+  const [isSpecific, setIsSpecific] = useState(false);
+
+  const handleOptionChange = (value) => {
+    setSelectedOption(value);
+    if (value === 'all') {
+      setIsSpecific(false);
+      handleAllProducts();
+    } else {
+      setIsSpecific(true);
+    }
+  };
+
+  useEffect(()=>{
+    if(shopifyProducts.length === recommendation.triggerProductIds.length)
+    {
+      setSelectedOption('all');
+    }
+    else
+    {
+      setIsSpecific(true);
+      setSelectedOption('specific');
+    }
+  },[])
+
+
 
   useEffect(() => {
     if (recommendationData) {
@@ -110,7 +139,7 @@ export default function RecommendationDetails() {
 
   useEffect(() => {
     if (actionData && actionData.success) {
-      navigate('../new');
+      navigate('../');
     }
   }, [actionData, navigate]);
 
@@ -121,7 +150,7 @@ export default function RecommendationDetails() {
     const res = submit(formData, { replace: true, method: 'DELETE' });
     if (res.success) {
       console.log("deleted");
-      navigate("../new");
+      navigate("../");
     } else {
       console.log("some err", res.err);
     }
@@ -144,7 +173,7 @@ export default function RecommendationDetails() {
 
   return (
     <Page
-      backAction={{ content: "Recommendation", url: '/app/new' }}
+      backAction={{ content: "Recommendation", url: '/app' }}
       title={`Editing ${recommendation.title}`}
       secondaryActions={[
         {
@@ -198,17 +227,34 @@ export default function RecommendationDetails() {
           <Card>
             <Label><Text variant="bodyMd" fontWeight="bold">Choose the trigger products</Text></Label>
             <div style={{ margin: '10px 0' }}>
-              <Button onClick={handleAllProducts}>All Products</Button>
+              <RadioButton
+                label="All Products"
+                checked={selectedOption === 'all'}
+                onChange={() => handleOptionChange('all')}
+              />
             </div>
-            <div>
-              <Button onClick={() => setModalOpen(true)}>Choose Trigger Products</Button>
+            <div style={{ margin: '10px 0' }}>
+              <RadioButton
+                label="Specific Products"
+                checked={selectedOption === 'specific'}
+                onChange={() => handleOptionChange('specific')}
+              />
             </div>
-            <div style={{margin:'10px 0',display:'flex',gap:'10px'}}>
+            {isSpecific ?
+              (<div>
+                <Button onClick={() => shopify.modal.show('my-modal')}>Choose Products</Button>
+                <p style={{ color: 'gray', marginTop: '10px' }}>*The offer will be applied for selected products</p>
+              </div>) :
+              (<p style={{ color: 'gray', marginLeft: '10px' }}>*The offer will be applied for all products</p>)
+            }
+
+            {/* <div style={{margin:'10px 0',display:'flex',gap:'10px'}}>
+              <p>Chosen Products</p>
               {recommendation.triggerProductIds?.map((productId) => {
                 const product = shopifyProducts.find(p => p.value === productId);
                 return product ? <Tag key={productId} onRemove={() => setRecommendation({ ...recommendation, triggerProductIds: recommendation.triggerProductIds.filter(id => id !== productId) })}>{product.label}</Tag> : null;
               })}
-            </div>
+            </div> */}
           </Card>
         </Layout.Section>
         <Layout.Section>
@@ -220,20 +266,28 @@ export default function RecommendationDetails() {
               selectedOptions={recommendation.recommendedProductIds}
               setSelectedOptions={(selected) => setRecommendation({ ...recommendation, recommendedProductIds: selected })}
               label="Recommended Product IDs"
+              type='normal'
             />
           </Card>
         </Layout.Section>
       </Layout>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)}>
+      <Modal id='my-modal'>
         <div style={{ margin: '20px' }}>
           <MultiAutoCombobox
             options={shopifyProducts}
             selectedOptions={recommendation.triggerProductIds}
             setSelectedOptions={(selected) => setRecommendation({ ...recommendation, triggerProductIds: selected })}
             label="Select Trigger Products"
+            type='modal'
           />
+          {/* {shopifyProducts} */}
+          <div style={{marginTop:'10px'}}>
+          <Button  onClick={() => shopify.modal.hide('my-modal')}>Add</Button>
+          </div>
         </div>
+        <TitleBar title='Choose Products'>
+        </TitleBar>
       </Modal>
     </Page>
   );

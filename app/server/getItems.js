@@ -14,7 +14,7 @@ const docClient = DynamoDBDocumentClient.from(client);
 
 export const fetchProducts = async () => {
   const params = {
-    TableName: 'ShopifyProducts'
+    TableName: 'UpsellOffers'
   };
 
   try {
@@ -26,9 +26,9 @@ export const fetchProducts = async () => {
   }
 };
 
-export const addProduct = async (recommendationId,triggerProductIds,recommendedProductIds,isEnabled,title,priority) => {
+export const addProduct = async (recommendationId,triggerProductIds,recommendedProductIds,isEnabled,title,priority,createdAt,updatedAt) => {
   const command = new PutCommand({
-    TableName: "ShopifyProducts",
+    TableName: "UpsellOffers",
     Item: {
       myShopifyDomain:"https://arwin-lb.myshopify.com/",
       offerId:recommendationId,
@@ -36,7 +36,9 @@ export const addProduct = async (recommendationId,triggerProductIds,recommendedP
       recommendedProductIds:recommendedProductIds,
       isEnabled:isEnabled,
       title:title,
-      priority:priority
+      priority:priority,
+      createdAt:createdAt,
+      updatedAt:updatedAt
     },
   });
   
@@ -48,7 +50,7 @@ export const addProduct = async (recommendationId,triggerProductIds,recommendedP
 export const getRecommendations = async (offerId) => {
   console.log("into function ",offerId);
   const command = new GetCommand({
-    TableName: "ShopifyProducts",
+    TableName: "UpsellOffers",
     Key: { myShopifyDomain:"https://arwin-lb.myshopify.com/",offerId },
   });
 
@@ -64,7 +66,7 @@ export const getRecommendations = async (offerId) => {
 export async function deleteRecommendation(offerId) {
   console.log("Into delete function",offerId);
   const command = new DeleteCommand({
-    TableName: "ShopifyProducts",
+    TableName: "UpsellOffers",
     Key: { myShopifyDomain:"https://arwin-lb.myshopify.com/",offerId },
   });
   const response = await docClient.send(command);
@@ -73,19 +75,20 @@ export async function deleteRecommendation(offerId) {
 
 
 export const updateRecommendations = async (recommendation) => {
-  const { offerId, triggerProductIds, title, priority, recommendedProductIds, isEnabled } = recommendation;
+  const { offerId, triggerProductIds, title, priority, recommendedProductIds, isEnabled,updatedAt } = recommendation;
   console.log("----------->",offerId, triggerProductIds, title, priority, recommendedProductIds, isEnabled)
 
   const command = new UpdateCommand({
-    TableName: "ShopifyProducts",
+    TableName: "UpsellOffers",
     Key: { myShopifyDomain:"https://arwin-lb.myshopify.com/",offerId },
-    UpdateExpression: "set triggerProductIds = :triggerProductIds, title = :title, priority = :priority, recommendedProductIds = :recommendedProductIds, isEnabled = :isEnabled",
+    UpdateExpression: "set triggerProductIds = :triggerProductIds, title = :title, priority = :priority, recommendedProductIds = :recommendedProductIds, isEnabled = :isEnabled,updatedAt=:updatedAt",
     ExpressionAttributeValues: {
       ":triggerProductIds": triggerProductIds,
       ":title": title,
       ":priority": priority,
       ":recommendedProductIds": recommendedProductIds,
       ":isEnabled": isEnabled,
+      ":updatedAt": updatedAt
     },
     ReturnValues: "ALL_NEW"
   });
@@ -102,7 +105,7 @@ export const updateRecommendations = async (recommendation) => {
 
 export const getOffers = async () => {
   const command = new QueryCommand({
-    TableName: "ShopifyProducts",
+    TableName: "UpsellOffers",
     KeyConditionExpression: "myShopifyDomain=:m",
     ExpressionAttributeValues: {
       ":m":{S:"https://arwin-lb.myshopify.com/"}

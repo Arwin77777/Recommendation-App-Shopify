@@ -1,6 +1,8 @@
 import express, { response } from 'express';
 import { addProduct, deleteRecommendation, getOffers, getRecommendations, updateRecommendations } from './getItems.js';
 import cors from 'cors';
+import moment from 'moment';
+import { create } from 'domain';
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -29,7 +31,9 @@ app.get('/recommendation',async (req,res)=>{
     console.log(req.body);
     const {recommendationId,triggerProductIds,recommendedProductIds,isEnabled,title,priority} = req.body;
     try{
-      const response = await addProduct(recommendationId,triggerProductIds,recommendedProductIds,isEnabled,title,priority);
+      const createdAt = moment().unix();
+      const updatedAt = '';
+      const response = await addProduct(recommendationId,triggerProductIds,recommendedProductIds,isEnabled,title,priority,createdAt,updatedAt);
       console.log(response);
       if(response)
       return res.status(200).json({response});
@@ -44,6 +48,7 @@ app.get('/recommendation',async (req,res)=>{
   app.put('/recommendation', async (req, res) => {
     console.log("Updating...")
     const recommendation = req.body;
+    recommendation.updatedAt = moment().unix();
     try {
       const updatedRecommendation = await updateRecommendations(recommendation);
       return res.status(200).json(updatedRecommendation);

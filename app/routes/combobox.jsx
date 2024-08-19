@@ -7,7 +7,7 @@ import {
 import { SearchIcon } from '@shopify/polaris-icons';
 import { useState, useCallback } from 'react';
 
-function MultiAutoCombobox({ options, selectedOptions, setSelectedOptions, label }) {
+function MultiAutoCombobox({ options, selectedOptions, setSelectedOptions, label,type }) {
   const [inputValue, setInputValue] = useState('');
   const [filteredOptions, setFilteredOptions] = useState(options);
 
@@ -78,8 +78,10 @@ function MultiAutoCombobox({ options, selectedOptions, setSelectedOptions, label
           />
         }
       >
-        {optionsMarkup ? <Listbox onSelect={updateSelection}>{optionsMarkup}</Listbox> : null}
+        {type==='normal' && optionsMarkup ? <Listbox onSelect={updateSelection}>{optionsMarkup}</Listbox> : null}
       </Combobox>
+        {type==='modal' && optionsMarkup ? <Listbox onSelect={updateSelection}>{optionsMarkup}</Listbox> : null}
+        {/* {optionsMarkup} */}
       <div style={{ margin: '10px 0px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
         {[...selectedProductsMap.entries()].map(([title, value]) => (
           <Tag key={value} onRemove={() => removeTag(value)}>
