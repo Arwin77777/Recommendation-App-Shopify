@@ -3,11 +3,12 @@ import { DynamoDBClient, QueryCommand } from "@aws-sdk/client-dynamodb";
 
 
 
+
 const client = new DynamoDBClient({
-    region: "us-west-2",
-    accessKeyId: 'a',
+  region: "us-west-2",
+  accessKeyId: 'a',
   secretAccessKey: 'a',
-    endpoint: "http://localhost:8000"
+  endpoint: "http://localhost:8000"
 });
 
 const docClient = DynamoDBDocumentClient.from(client);
@@ -26,36 +27,37 @@ export const fetchProducts = async () => {
   }
 };
 
-export const addProduct = async (recommendationId,triggerProductIds,recommendedProductIds,isEnabled,title,priority,createdAt,updatedAt) => {
+export const addRecommendation = async (offerId, triggerProductIds, recommendedProductIds, isEnabled, title, priority, createdAt, updatedAt, shop) => {
+
   const command = new PutCommand({
     TableName: "UpsellOffers",
     Item: {
-      myShopifyDomain:"https://arwin-lb.myshopify.com/",
-      offerId:recommendationId,
+      myShopifyDomain: shop,
+      offerId: offerId,
       triggerProductIds: triggerProductIds,
-      recommendedProductIds:recommendedProductIds,
-      isEnabled:isEnabled,
-      title:title,
-      priority:priority,
-      createdAt:createdAt,
-      updatedAt:updatedAt
+      recommendedProductIds: recommendedProductIds,
+      isEnabled: isEnabled,
+      title: title,
+      priority: priority,
+      createdAt: createdAt,
+      updatedAt: ''
     },
   });
-  
+
+  // 
   const response = await docClient.send(command);
-  console.log("Into function");
   return response;
 };
 
-export const getRecommendations = async (offerId) => {
-  console.log("into function ",offerId);
+export const getRecommendation = async (offerId, shop) => {
+
   const command = new GetCommand({
     TableName: "UpsellOffers",
-    Key: { myShopifyDomain:"https://arwin-lb.myshopify.com/",offerId },
+    Key: { myShopifyDomain: shop, offerId },
   });
 
   const response = await docClient.send(command);
-  // console.log(response.Item.recommendedProducts);
+
   if (response.Item) {
     return response.Item;
   }
@@ -63,24 +65,24 @@ export const getRecommendations = async (offerId) => {
 };
 
 
-export async function deleteRecommendation(offerId) {
-  console.log("Into delete function",offerId);
+export async function deleteRecommendation(offerId, shop) {
+
   const command = new DeleteCommand({
     TableName: "UpsellOffers",
-    Key: { myShopifyDomain:"https://arwin-lb.myshopify.com/",offerId },
+    Key: { myShopifyDomain: shop, offerId },
   });
   const response = await docClient.send(command);
   return response;
 }
 
 
-export const updateRecommendations = async (recommendation) => {
-  const { offerId, triggerProductIds, title, priority, recommendedProductIds, isEnabled,updatedAt } = recommendation;
-  console.log("----------->",offerId, triggerProductIds, title, priority, recommendedProductIds, isEnabled)
+export const updateRecommendation = async (recommendation) => {
+  const { offerId, triggerProductIds, title, priority, recommendedProductIds, isEnabled, updatedAt, shop } = recommendation;
+
 
   const command = new UpdateCommand({
     TableName: "UpsellOffers",
-    Key: { myShopifyDomain:"https://arwin-lb.myshopify.com/",offerId },
+    Key: { myShopifyDomain: shop, offerId },
     UpdateExpression: "set triggerProductIds = :triggerProductIds, title = :title, priority = :priority, recommendedProductIds = :recommendedProductIds, isEnabled = :isEnabled,updatedAt=:updatedAt",
     ExpressionAttributeValues: {
       ":triggerProductIds": triggerProductIds,
@@ -95,7 +97,7 @@ export const updateRecommendations = async (recommendation) => {
 
   try {
     const response = await docClient.send(command);
-    console.log('Update successful:', response);
+
     return response.Attributes;
   } catch (error) {
     console.error('Update failed:', error);
@@ -103,23 +105,23 @@ export const updateRecommendations = async (recommendation) => {
   }
 };
 
-export const getOffers = async () => {
+export const getRecommendations = async () => {
   const command = new QueryCommand({
     TableName: "UpsellOffers",
     KeyConditionExpression: "myShopifyDomain=:m",
     ExpressionAttributeValues: {
-      ":m":{S:"https://arwin-lb.myshopify.com/"}
+      ":m": { S: "arwin-lb.myshopify.com" }
     }
   });
 
   try {
-    console.log("In try block");
+
     const response = await docClient.send(command);
-    console.log("Response of getOffers",response);
+
     if (response.Items) {
-      return response.Items; 
+      return response.Items;
     } else {
-      console.log('No items found');
+
       return [];
     }
   } catch (err) {

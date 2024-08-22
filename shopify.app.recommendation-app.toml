@@ -3,7 +3,7 @@
 client_id = "a8f8c6bc53c06dbf54fad4f3908f9974"
 name = "recommendation-app"
 handle = "recommendation-app-9"
-application_url = "https://marilyn-normal-carl-largest.trycloudflare.com"
+application_url = "https://killer-variety-matt-frankfurt.trycloudflare.com"
 embedded = true
 
 [build]
@@ -17,9 +17,9 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://marilyn-normal-carl-largest.trycloudflare.com/auth/callback",
-  "https://marilyn-normal-carl-largest.trycloudflare.com/auth/shopify/callback",
-  "https://marilyn-normal-carl-largest.trycloudflare.com/api/auth/callback"
+  "https://killer-variety-matt-frankfurt.trycloudflare.com/auth/callback",
+  "https://killer-variety-matt-frankfurt.trycloudflare.com/auth/shopify/callback",
+  "https://killer-variety-matt-frankfurt.trycloudflare.com/api/auth/callback"
 ]
 
 [webhooks]

@@ -1,195 +1,146 @@
-import React, { useState, useEffect } from 'react';
-import {
-  IndexTable,
-  LegacyCard,
-  useIndexResourceState,
-  Text,
-  Button,
-  Page,
-  Link,
-} from '@shopify/polaris';
+import { Button, IndexTable, LegacyCard, Link, Page, Text, useIndexResourceState } from '@shopify/polaris';
+import React, { useEffect, useState } from 'react';
+import { fetchProducts } from '../server/dbUtil';
 import { useLoaderData, useNavigate } from '@remix-run/react';
-import { DeleteIcon, EditIcon } from '@shopify/polaris-icons';
-import { fetchProducts } from '../server/getItems';
+import { EditIcon } from '@shopify/polaris-icons';
 
-// Convert DynamoDB format to plain JS objects
-const convertDynamoDBData = (data) => {
-  console.log("data before conversion", data)
-  return data.map(item => ({
-    offerId: item.offerId.S,
-    title: item.title.S,
-    priority: Number(item.priority.N),
-    isEnabled: item.isEnabled.S === 'true',
-    recommendedProductIds: item.recommendedProductIds.L.map(id => id.S),
-    triggerProductIds: item.triggerProductIds.L.map(id => id.S),
-  }));
-
-  // return data;
-};
-
-// Loader function to fetch initial data
-export async function loader() {
-  try {
-    const response = await fetchProducts();
-    return { products: response.data };
-  } catch (err) {
-    console.log(err);
-    return err;
-  }
+export async function loader({ request }) {
+    try {
+        const url = new URL(request.url);
+        const shop = url.searchParams.get("shop");
+        const response = await fetchProducts();
+        return { orders: response.data, shop: shop };
+    } catch (err) {
+        
+        return { orders: [], error: 'Failed to fetch data' };
+    }
 }
 
-// Table component with data management
-const MyIndexTable = ({ data, setData }) => {
-  const navigate = useNavigate();
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [loader,setLoader] = useState(false);
+const Table = () => {
+    const navigate = useNavigate();
+    const { orders, error, shop: loaderShop } = useLoaderData();
+    const shop = loaderShop || localStorage.getItem("shop");
 
-  const resourceName = {
-    singular: 'product',
-    plural: 'products',
-  };
 
-  const { selectedResources, allResourcesSelected, handleSelectionChange } =
-    useIndexResourceState(data);
+    const [renamedOrders, setRenamedOrders] = useState(
+        orders.map(({ offerId, ...rest }) => ({
+            id: offerId,
+            ...rest
+        }))
+    );
 
-  const handleEdit = (offerId) => {
-    navigate(`../recommendation/${offerId}`);
-  };
+    const { clearSelection, selectedResources, allResourcesSelected, handleSelectionChange } = useIndexResourceState(renamedOrders || []);
 
-  const handleDeleteSelected = async () => {
-    setIsDeleting(true);
-    try {
-      await Promise.all(
-        selectedResources.map((offerId) =>
-          fetch(`http://localhost:3004/recommendation?offerId=${offerId}`, {
-            method: 'DELETE',
-          })
-        )
-      );
-      await refreshData();
-      setLoader(false);
-      // handleSelectionChange([]);
-    } catch (err) {
-      console.log(err);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const refreshData = async () => {
-    try {
-      const response = await fetch("http://localhost:3004/offers");
-      const rawOffers = await response.json();
-      console.log("raw offers", rawOffers);
-      const offers = convertDynamoDBData(rawOffers);
-      setData(offers);
-      handleSelectionChange([]);
-      setLoader(true);
-      window.location.reload();
-    } catch (err) {
-      console.log(err);
-    }
-  };
-  const rowMarkup = data.map(
-    ({ offerId, title, priority, isEnabled }, index) => (
-      <IndexTable.Row
-        id={offerId}
-        key={offerId}
-        selected={selectedResources.includes(offerId)}
-        position={index}
-      >
-        <IndexTable.Cell>
-          <Text variant="bodyMd" fontWeight="bold" as="span">
-            {title}
-          </Text>
-        </IndexTable.Cell>
-        <IndexTable.Cell>{priority}</IndexTable.Cell>
-        <IndexTable.Cell>
-          {isEnabled ? 'Active' : 'Inactive'}
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <Link
-              url={`./recommendation/${offerId}`}
-              onClick={(event) => {
-                event.stopPropagation(); 
-                console.log("Edited ", offerId);
-              }}
-            >
-              <Button icon={EditIcon} />
-            </Link>
-            <Button icon={DeleteIcon} onClick={() => handleDeleteSelected()} destructive  />
-          </div>
-        </IndexTable.Cell>
-      </IndexTable.Row>
-    )
-  );
-
-  return (
-    <div>
-      {/* {loader ? ( */}
-    <LegacyCard>
-    <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-      <IndexTable
-        resourceName={resourceName}
-        itemCount={data.length}
-        selectedItemsCount={allResourcesSelected ? 'All' : selectedResources.length}
-        onSelectionChange={handleSelectionChange}
-        headings={[
-          { title: 'Title' },
-          { title: 'Priority' },
-          { title: 'Status' },
-          { title: 'Actions' },
-        ]}
-      >
-        {rowMarkup}
-      </IndexTable>
-    </div>
-    {selectedResources.length > 1 && (
-      <div style={{ padding: '16px' }}>
-        <Button onClick={handleDeleteSelected} destructive loading={isDeleting}>
-          Delete Selected
-        </Button>
-      </div>
-    )}
-  </LegacyCard>
-  {/* ):(<p>loading</p>)} */}
-  </div>
-  
-  );
-};
-
-export default function ExamplePage() {
-  const { products } = useLoaderData();
-  const [data, setData] = useState(products);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await fetch("http://localhost:3004/offers");
-        if (response.data) {
-          setData(convertDynamoDBData(response.data));
+    useEffect(() => {
+        if (shop) {
+            
+            localStorage.setItem("shop", shop);
         }
-      } catch (err) {
-        console.log(err);
-      }
+    }, [shop]);
+
+    if (error) {
+        return <div>Error: {error}</div>;
+    }
+
+    const resourceName = {
+        singular: 'order',
+        plural: 'orders',
     };
 
-    fetchData();
-  }, []);
+    const handleDeleteSelected = async () => {
+        try {
+            await Promise.all(
+                selectedResources.map((id) =>
+                    fetch(`http://localhost:3004/recommendation?offerId=${id}&shop=${shop}`, {
+                        method: 'DELETE',
+                    })
+                )
+            );
+            setRenamedOrders((prevOrders) =>
+                prevOrders.filter((order) => !selectedResources.includes(order.id))
+            );
+            clearSelection();
+            // Show success message using Shopify's toast or any other toast library
+            
+        } catch (err) {
+            console.error('Failed to delete offers:', err);
+            // Show an error message
+            
+        }
+    };
 
-  return (
-    <Page
-      title="Upsell Offers"
-      secondaryActions={[
-        {
-          content: 'Add an Offer',
-          onAction: () => navigate('/app/offer'),
-        },
-      ]}
-    >
-      <MyIndexTable data={data} setData={setData} />
-      </Page>
-  );
+    const rowMarkup = (renamedOrders || []).map(
+        ({ id, title, priority, isEnabled }, index) => (
+            <IndexTable.Row
+                id={id}
+                key={id}
+                selected={selectedResources.includes(id)}
+                position={index}
+            >
+                <IndexTable.Cell>
+                    <Text variant="bodyMd" fontWeight="bold" as="span">
+                        {title}
+                    </Text>
+                </IndexTable.Cell>
+                <IndexTable.Cell>{priority}</IndexTable.Cell>
+                <IndexTable.Cell>
+                    {isEnabled === true || isEnabled === 'true' ? 'Active' : 'Inactive'}
+                </IndexTable.Cell>
+                <IndexTable.Cell>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        <Link
+                            url={`./recommendation/${id}?shop=${shop}`}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                            }}
+                        >
+                            <Button icon={EditIcon} />
+                        </Link>
+                    </div>
+                </IndexTable.Cell>
+            </IndexTable.Row>
+        ),
+    );
+
+    return (
+        <Page
+            title="Upsell Offers"
+            secondaryActions={[
+                {
+                    content: 'Add an Offer',
+                    onAction: () => navigate(`/app/recommendation/new`),
+                },
+            ]}
+        >
+            <div>
+                <LegacyCard>
+                    <IndexTable
+                        resourceName={resourceName}
+                        itemCount={(renamedOrders || []).length}
+                        selectedItemsCount={
+                            allResourcesSelected ? 'All' : selectedResources.length
+                        }
+                        onSelectionChange={handleSelectionChange}
+                        headings={[
+                            { title: 'Title' },
+                            { title: 'Priority' },
+                            { title: 'Status' },
+                            { title: 'Edit' },
+                        ]}
+                    >
+                        {rowMarkup}
+                    </IndexTable>
+                    {selectedResources.length > 0 && (
+                        <div style={{ padding: '16px' }}>
+                            <Button onClick={handleDeleteSelected} destructive>
+                                Delete Selected
+                            </Button>
+                        </div>
+                    )}
+                </LegacyCard>
+            </div>
+        </Page>
+    );
 }
+
+export default Table;

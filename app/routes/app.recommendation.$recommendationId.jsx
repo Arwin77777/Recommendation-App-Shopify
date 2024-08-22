@@ -1,26 +1,27 @@
-import { json } from '@remix-run/node';
-import shopify from "./app/shopify.server";
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLoaderData, useSubmit, useActionData, useParams } from '@remix-run/react';
-import { Page, Card, Form, FormLayout, TextField, Button, Select, Layout, Text, Label, Tag, RadioButton } from '@shopify/polaris';
-import MultiAutoCombobox from './combobox';
-import { Modal, TitleBar, useAppBridge } from '@shopify/app-bridge-react';
+import { useActionData, useLoaderData, useNavigate, useSubmit } from '@remix-run/react';
+import {
+  Page,
+  Card,
+  Button,
+  TextField,
+  Layout,
+  Checkbox,
+  RadioButton,
+  Label,
+  Tag,
+} from '@shopify/polaris';
+import { useState, useEffect } from 'react';
+import { v4 as uuid } from "uuid";
+import { authenticate } from '../shopify.server';
 
 
-
-
-
-export async function loader({ params, request }) {
-  console.log("In loader");
-  const { recommendationId } = params;
-  console.log("In loader",recommendationId);
-
+export async function loader({ request, params }) {
   try {
-    const { admin } = await shopify.authenticate.admin(request);
+    const { admin } = await authenticate.admin(request);
 
     const response = await admin.graphql(`
       {
-        products(first: 10, query: "inventory_total:>0") {
+        products(first: 250, query: "inventory_total:>0") {
           nodes {
             id
             title
@@ -28,204 +29,287 @@ export async function loader({ params, request }) {
         }
       }
     `);
-    const sp = await response.json();
-    console.log("wq", sp);
-    const shopifyProducts = sp.data.products.nodes.map(product => ({
-      value: product.id,
-      label: product.title
-    }));
 
-    const recommendationResponse = await fetch(`http://localhost:3004/recommendation?recommendationId=${recommendationId}`);
-    if (!recommendationResponse.ok) {
-      throw new Error(`Error fetching data: ${recommendationResponse.statusText}`);
-    }
-    const recommendationData = await recommendationResponse.json();
+    const url = new URL(request.url);
+    const shop = url.searchParams.get("shop")
 
-    return json({ shopifyProducts, recommendationData });
+
+
+    const shopifyProducts = await response.json();
+
+    const { recommendationId } = params
+    const existingRecommendation = recommendationId
+      ? await fetch(`http://localhost:3004/recommendation?recommendationId=${recommendationId}&shop=${shop}`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+
+          if (data.length === 0)
+            return null;
+          return data;
+        })
+        .catch(error => {
+          console.error("Error fetching recommendation:", error);
+          return null;
+        })
+      : null;
+
+
+    return {
+      shopifyProducts: shopifyProducts.data.products.nodes,
+      existingRecommendation,
+      shop: shop
+    };
   } catch (err) {
-    console.error('Error occurred:', err);
-    return json({ success: false, err }, { status: 500 });
+
+    return { err };
   }
 }
 
-export async function action({ request }) {
+export async function action({ request, params }) {
   const formData = await request.formData();
-  const type = formData.get("type");
-  if(type=="PUT")
-    {
-    const recommendation = JSON.parse(formData.get("recommendation"));
+
+  const selectedProductsMap = new Map(formData.getAll("selectedProducts").map(item => JSON.parse(item)));
+  const selectedRecommendationsMap = new Map(formData.getAll("selectedRecommendations").map(item => JSON.parse(item)));
+
+  const triggerProductIds = Array.from(selectedProductsMap.keys());
+  const recommendedProductIds = Array.from(selectedRecommendationsMap.keys());
+  const title = formData.get("title");
+  const isEnabled = formData.get("isEnabled") === 'true';
+  const e = isEnabled ? "true" : "false";
+  const { recommendationId } = params;
+  const priority = Number(formData.get("priority"));
+  const shop = formData.get("shop");
+
+  const id = uuid();
   try {
-    const response = await fetch(`http://localhost:3004/recommendation`, {
-      method: 'PUT',
+    const response = await fetch(`http://localhost:3004/recommendation?shop=${shop}`, {
+      method: params.recommendationId != 'new' ? 'PUT' : 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify(recommendation),
+      body: JSON.stringify({
+        offerId: recommendationId == "new" ? id : recommendationId,
+        title,
+        priority,
+        triggerProductIds: triggerProductIds,
+        recommendedProductIds: recommendedProductIds,
+        isEnabled: e,
+        shop: shop
+      })
     });
 
-    if (response.status == 200) {
-      console.log('Updated data:', response);
-      return json({ success: true, message: "Updated" });
-    } else {
-      return json({ success: false, message: "Failed" });
-    }
-  } catch (err) {
-    console.error(err);
-    return json({ success: false, err });
-  }
-  }
-  else if(type=="DELETE")
-  {
-    const recommendationId = formData.get("id");
-    console.log("offer id------>",recommendationId);
-    try {
-      const response =  await fetch(`http://localhost:3004/recommendation?offerId=${recommendationId}`, {
-         method: 'DELETE',
-       })
-       if(response.ok)
-       {
-         console.log("Deleted",response);
-         return json({ success: true, message: "Deleted" });
 
-       }
- } catch (err) {
-   console.log(err);
-   return json({ success: false, err });
- }
+
+    if (!response.ok) {
+      const errorMessage = await response.text();
+      return { success: false, error: `Failed to save recommendation: ${errorMessage}` };
+    }
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: `Error: ${err.message}` };
   }
 }
 
-export default function RecommendationDetails() {
-  const { recommendationId } = useParams();
-  const { recommendationData, shopifyProducts } = useLoaderData();
-  const [recommendation, setRecommendation] = useState(recommendationData || {});
-  const [modalOpen, setModalOpen] = useState(false);
-  const submit = useSubmit();
+function MultiselectTagComboboxExample() {
+  const { shopifyProducts, existingRecommendation } = useLoaderData();
+  const shop = localStorage.getItem("shop")
   const navigate = useNavigate();
+  const [priority, setPriority] = useState(existingRecommendation ? existingRecommendation.priority : 1);
+  const [isEnabled, setIsEnabled] = useState(() => {
+    if (existingRecommendation && existingRecommendation.isEnabled) {
+      return existingRecommendation.isEnabled === 'true' || existingRecommendation.isEnabled === true;
+    }
+    return false;
+  });
+  const [recommendationName, setRecommendationName] = useState(existingRecommendation ? existingRecommendation.title : '');
+  const [triggerProducts, setTriggerProducts] = useState(new Map(existingRecommendation != null ? existingRecommendation.triggerProductIds.map(id => [id, shopifyProducts.find(product => product.id === id).title]) : []));
+  const [recommendedProducts, setRecommendedProducts] = useState(new Map(existingRecommendation != null ? existingRecommendation.recommendedProductIds.map(id => [id, shopifyProducts.find(product => product.id === id).title]) : []));
+  const [error, setError] = useState('');
   const actionData = useActionData();
-  const shopify = useAppBridge();
-  const [selectedOption, setSelectedOption] = useState('');
-  const [isSpecific, setIsSpecific] = useState(false);
+  const [isSpecific, setIsSpecific] = useState(existingRecommendation ? (existingRecommendation.triggerProductIds.length === shopifyProducts.length ? 'all' : 'specific') : '');
+  // 
+  const [selectedOption, setSelectedOption] = useState(existingRecommendation ? (existingRecommendation.triggerProductIds.length === shopifyProducts.length ? 'all' : 'specific') : '');
+  const submit = useSubmit();
+
+
+
+
+
+  useEffect(() => {
+    if (actionData && actionData.success) {
+      shopify.toast.show('Product saved', {
+        duration: 2000,
+      });
+      navigate('../');
+    } else if (actionData && actionData.error) {
+      setError(actionData.error);
+    }
+  }, [actionData, navigate]);
+
+  const handleTriggerSelect = async () => {
+    const t1 = Array.from(triggerProducts.keys());
+    const transformedTriggerIds = t1.map(id => ({ id }));
+    const selected = await shopify.resourcePicker({
+      type: 'product',
+      showVariants: false,
+      multiple: true,
+      selectionIds: transformedTriggerIds
+    });
+
+    const selectedProductMap = new Map();
+    selected.forEach(product => {
+      selectedProductMap.set(product.id, product.title);
+    });
+
+    setTriggerProducts(selectedProductMap);
+  };
+
+  const handleRecommendSelect = async () => {
+    const t = Array.from(recommendedProducts.keys());
+    const transformedRecommendIds = t.map(id => ({ id }));
+    const selected = await shopify.resourcePicker({
+      type: 'product',
+      showVariants: false,
+      multiple: true,
+      selectionIds: transformedRecommendIds
+    });
+
+    const selectedRecommendationMap = new Map();
+    selected.forEach(product => {
+      selectedRecommendationMap.set(product.id, product.title);
+    });
+
+    setRecommendedProducts(selectedRecommendationMap);
+  };
+
+  const handleSave = () => {
+    if (!recommendationName.trim()) {
+      setError('Title is required');
+      return;
+    }
+    if (priority <= 0) {
+      setError('Priority must be greater than 0');
+      return;
+    }
+    if (triggerProducts.size === 0) {
+      setError('At least one trigger product must be selected');
+      return;
+    }
+    if (recommendedProducts.size === 0) {
+      setError('At least one recommendation product must be selected');
+      return;
+    }
+
+    const formData = new FormData();
+    triggerProducts.forEach((title, id) => {
+      formData.append('selectedProducts', JSON.stringify([id, title]));
+    });
+    recommendedProducts.forEach((title, id) => {
+      formData.append('selectedRecommendations', JSON.stringify([id, title]));
+    });
+    formData.append('title', recommendationName);
+    formData.append('priority', priority);
+    formData.append('isEnabled', isEnabled.toString());
+    formData.append('shop', shop)
+
+
+    submit(formData, { method: 'post' });
+  };
+
+  const handleAllProducts = async () => {
+    const productsMap = new Map(shopifyProducts.map(product => [product.id, product.title]));
+    setTriggerProducts(productsMap);
+  };
 
   const handleOptionChange = (value) => {
     setSelectedOption(value);
     if (value === 'all') {
-      setIsSpecific(false);
+      setIsSpecific('all');
       handleAllProducts();
     } else {
-      setIsSpecific(true);
+      setTriggerProducts(new Map());
+      setIsSpecific('specific');
     }
   };
 
-  useEffect(()=>{
-    if(shopifyProducts.length === recommendation.triggerProductIds.length)
-    {
-      setSelectedOption('all');
-    }
-    else
-    {
-      setIsSpecific(true);
-      setSelectedOption('specific');
-    }
-  },[])
-
-
-
-  useEffect(() => {
-    if (recommendationData) {
-      setRecommendation(recommendationData);
-    }
-  }, [recommendationData]);
-
-  useEffect(() => {
-    if (actionData && actionData.success) {
-      navigate('../');
-    }
-  }, [actionData, navigate]);
-
-  const handleDelete = async () => {
-    const formData = new FormData();
-    formData.append("type", "DELETE");
-    formData.append("id", recommendationId);
-    const res = submit(formData, { replace: true, method: 'DELETE' });
-    if (res.success) {
-      console.log("deleted");
-      navigate("../");
-    } else {
-      console.log("some err", res.err);
-    }
+  const removeTag = (tag) => {
+    return () => {
+      setRecommendedProducts((previousTags) => {
+        const updatedTags = new Map(previousTags);
+        updatedTags.delete(tag);
+        return updatedTags;
+      });
+    };
   };
 
-  const handleSubmit = async () => {
-    const formData = new FormData();
-    formData.append("type", "PUT");
-    formData.append("recommendation", JSON.stringify(recommendation));
-    submit(formData, { replace: true, method: 'PUT' });
+  const removeTag1 = (tag) => {
+    return () => {
+      setTriggerProducts((previousTags) => {
+        const updatedTags = new Map(previousTags);
+        updatedTags.delete(tag);
+        return updatedTags;
+      });
+    };
   };
-
-  const handleAllProducts = () => {
-    setRecommendation({ ...recommendation, triggerProductIds: shopifyProducts.map(p => p.value) });
-  };
-
-  if (!recommendation || Object.keys(recommendation).length === 0) {
-    return <div>Loading...</div>;
-  }
 
   return (
     <Page
-      backAction={{ content: "Recommendation", url: '/app' }}
-      title={`Editing ${recommendation.title}`}
-      secondaryActions={[
-        {
-          content: "Delete",
-          accessibilityLabel: "Secondary action label",
-          onAction: handleDelete,
-          destructive: true
-        },
-        {
-          content: "Save",
-          accessibilityLabel: "Secondary action label",
-          onAction: handleSubmit,
-        }
-      ]}
+      backAction={{ content: "Offer", url: '/app' }}
+      title={existingRecommendation ? `Editing ${recommendationName}` : 'Add Offer'}
+      secondaryActions={[{
+        content: "Save",
+        onAction: handleSave,
+      }]}
     >
       <Layout>
         <Layout.Section>
           <Card>
-            <div style={{ marginBottom: '5px' }}>
-              <Label><Text variant="bodyMd" fontWeight="bold">Title</Text></Label>
+            <div style={{ marginBottom: '10px' }}>
+              <label><b>Title</b></label>
             </div>
             <TextField
-              value={recommendation.title || ''}
-              onChange={(value) => setRecommendation({ ...recommendation, title: value })}
+              placeholder="Example Title"
+              value={recommendationName}
+              onChange={setRecommendationName}
+              autoComplete='off'
+              error={error && !recommendationName.trim() ? error : null}
             />
-            <br />
-            <div style={{ marginBottom: '5px' }}>
-              <Label><Text variant="bodyMd" fontWeight="bold">Priority</Text></Label>
+            <div style={{ margin: '10px 0' }}>
+              <label><b>Priority</b></label>
             </div>
             <TextField
+              placeholder="1"
               type="number"
-              value={recommendation.priority?.toString() || ''}
-              onChange={(value) => setRecommendation({ ...recommendation, priority: parseInt(value) })}
+              value={priority || ''}
+              onChange={setPriority}
+              autoComplete='off'
+              error={error && priority <= 0 ? error : null}
             />
           </Card>
         </Layout.Section>
-        <Layout.Section variant='oneThird'>
+
+        <Layout.Section oneThird>
           <Card>
-            <Select
-              label={<Text variant="bodyMd" fontWeight="bold">Status</Text>}
-              options={[
-                { label: 'Active', value: 'true' },
-                { label: 'Inactive', value: 'false' }
-              ]}
-              value={recommendation.isEnabled?.toString() || ''}
-              onChange={(value) => setRecommendation({ ...recommendation, isEnabled: value === 'true' })}
+            <Label><b>Status</b></Label>
+            <Checkbox
+              label="Enable"
+              checked={isEnabled}
+              onChange={() => setIsEnabled(!isEnabled)}
             />
           </Card>
         </Layout.Section>
+
         <Layout.Section>
           <Card>
-            <Label><Text variant="bodyMd" fontWeight="bold">Choose the trigger products</Text></Label>
+            <div style={{ marginBottom: '10px' }}>
+              <label><b>Trigger Products</b></label>
+            </div>
             <div style={{ margin: '10px 0' }}>
               <RadioButton
                 label="All Products"
@@ -240,55 +324,50 @@ export default function RecommendationDetails() {
                 onChange={() => handleOptionChange('specific')}
               />
             </div>
-            {isSpecific ?
+            {isSpecific === 'specific' ?
               (<div>
-                <Button onClick={() => shopify.modal.show('my-modal')}>Choose Products</Button>
+                <Button onClick={handleTriggerSelect}>Select Product</Button>
                 <p style={{ color: 'gray', marginTop: '10px' }}>*The offer will be applied for selected products</p>
-              </div>) :
-              (<p style={{ color: 'gray', marginLeft: '10px' }}>*The offer will be applied for all products</p>)
+                <div style={{ display: 'flex', margin: '10px 0px', gap: '10px' }}>
+                  {Array.from(triggerProducts.keys()).map((key) => (
+                    <div key={key}>
+                      <Tag onRemove={removeTag1(key)}>{triggerProducts.get(key)}</Tag>
+                    </div>
+                  ))}
+                </div>
+              </div>) : isSpecific === 'all' ?
+                (<p style={{ color: 'gray', marginLeft: '10px' }}>*The offer will be applied for all products</p>)
+                : (<p></p>)
             }
-
-            {/* <div style={{margin:'10px 0',display:'flex',gap:'10px'}}>
-              <p>Chosen Products</p>
-              {recommendation.triggerProductIds?.map((productId) => {
-                const product = shopifyProducts.find(p => p.value === productId);
-                return product ? <Tag key={productId} onRemove={() => setRecommendation({ ...recommendation, triggerProductIds: recommendation.triggerProductIds.filter(id => id !== productId) })}>{product.label}</Tag> : null;
-              })}
-            </div> */}
           </Card>
         </Layout.Section>
+
         <Layout.Section>
           <Card>
-            <Label><Text variant="bodyMd" fontWeight="bold">Choose the recommendation products</Text></Label>
-            <br />
-            <MultiAutoCombobox
-              options={shopifyProducts}
-              selectedOptions={recommendation.recommendedProductIds}
-              setSelectedOptions={(selected) => setRecommendation({ ...recommendation, recommendedProductIds: selected })}
-              label="Recommended Product IDs"
-              type='normal'
-            />
+            <div style={{ marginBottom: '10px' }}>
+              <label><b>Recommended Products</b></label>
+            </div>
+            <Button onClick={handleRecommendSelect}>Choose Products</Button>
+            <div style={{ display: 'flex', margin: '10px 0px', gap: '10px' }}>
+              {Array.from(recommendedProducts.keys()).map((key) => (
+                <div key={key}>
+                  <Tag onRemove={removeTag(key)}>{recommendedProducts.get(key)}</Tag>
+                </div>
+              ))}
+            </div>
           </Card>
         </Layout.Section>
-      </Layout>
 
-      <Modal id='my-modal'>
-        <div style={{ margin: '20px' }}>
-          <MultiAutoCombobox
-            options={shopifyProducts}
-            selectedOptions={recommendation.triggerProductIds}
-            setSelectedOptions={(selected) => setRecommendation({ ...recommendation, triggerProductIds: selected })}
-            label="Select Trigger Products"
-            type='modal'
-          />
-          {/* {shopifyProducts} */}
-          <div style={{marginTop:'10px'}}>
-          <Button  onClick={() => shopify.modal.hide('my-modal')}>Add</Button>
-          </div>
-        </div>
-        <TitleBar title='Choose Products'>
-        </TitleBar>
-      </Modal>
+        {error && (
+          <Layout.Section>
+            <Card sectioned title="Error">
+              <p>{error}</p>
+            </Card>
+          </Layout.Section>
+        )}
+      </Layout>
     </Page>
   );
 }
+
+export default MultiselectTagComboboxExample;
