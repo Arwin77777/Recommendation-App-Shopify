@@ -1,4 +1,4 @@
-import { useActionData, useLoaderData, useNavigate, useSubmit } from '@remix-run/react';
+import { redirect, useActionData, useLoaderData, useNavigate, useSubmit } from '@remix-run/react';
 import {
   Page,
   Card,
@@ -11,8 +11,8 @@ import {
   Tag,
 } from '@shopify/polaris';
 import { useState, useEffect } from 'react';
-import { v4 as uuid } from "uuid";
 import { authenticate } from '../shopify.server';
+import { uuid } from 'uuidv4';
 
 
 export async function loader({ request, params }) {
@@ -32,11 +32,7 @@ export async function loader({ request, params }) {
 
     const url = new URL(request.url);
     const shop = url.searchParams.get("shop")
-
-
-
     const shopifyProducts = await response.json();
-
     const { recommendationId } = params
     const existingRecommendation = recommendationId
       ? await fetch(`http://localhost:3004/recommendation?recommendationId=${recommendationId}&shop=${shop}`)
@@ -47,25 +43,19 @@ export async function loader({ request, params }) {
           return res.json();
         })
         .then(data => {
-
-          if (data.length === 0)
-            return null;
-          return data;
+          return data.length === 0 ? null : data;
         })
         .catch(error => {
           console.error("Error fetching recommendation:", error);
           return null;
         })
       : null;
-
-
     return {
-      shopifyProducts: shopifyProducts.data.products.nodes,
+      shopifyProducts: shopifyProducts?.data?.products?.nodes,
       existingRecommendation,
       shop: shop
     };
   } catch (err) {
-
     return { err };
   }
 }
@@ -84,7 +74,9 @@ export async function action({ request, params }) {
   const { recommendationId } = params;
   const priority = Number(formData.get("priority"));
   const shop = formData.get("shop");
-
+  const isAll = formData.get('isAll');
+  console.log("is all or not --------> ",isAll);
+  console.log("Within action", triggerProductIds, recommendedProductIds, isEnabled, title, priority, shop);
   const id = uuid();
   try {
     const response = await fetch(`http://localhost:3004/recommendation?shop=${shop}`, {
@@ -99,7 +91,8 @@ export async function action({ request, params }) {
         triggerProductIds: triggerProductIds,
         recommendedProductIds: recommendedProductIds,
         isEnabled: e,
-        shop: shop
+        shop: shop,
+        isAll: isAll
       })
     });
 
@@ -107,59 +100,81 @@ export async function action({ request, params }) {
 
     if (!response.ok) {
       const errorMessage = await response.text();
-      return { success: false, error: `Failed to save recommendation: ${errorMessage}` };
+      return { success: false, error: `Failed to save recommendation: ${errorMessage} ` };
     }
-
-    return { success: true };
+    // console.log(response);
+    const newRecommendationId = recommendationId == "new" ? id : recommendationId;
+    // return redirect(`/app/recommendation/${newRecommendationId}?shop=${shop}`);
+    return { success: true, recommendationId: newRecommendationId, shop };
   } catch (err) {
-    return { success: false, error: `Error: ${err.message}` };
+    return { success: false, error: `Error: ${err.message} ` };
   }
 }
 
 function MultiselectTagComboboxExample() {
   const { shopifyProducts, existingRecommendation } = useLoaderData();
-  const shop = localStorage.getItem("shop")
+  const shop = localStorage.getItem("shop");
   const navigate = useNavigate();
-  const [priority, setPriority] = useState(existingRecommendation ? existingRecommendation.priority : 1);
-  const [isEnabled, setIsEnabled] = useState(() => {
-    if (existingRecommendation && existingRecommendation.isEnabled) {
-      return existingRecommendation.isEnabled === 'true' || existingRecommendation.isEnabled === true;
-    }
-    return false;
-  });
-  const [recommendationName, setRecommendationName] = useState(existingRecommendation ? existingRecommendation.title : '');
-  const [triggerProducts, setTriggerProducts] = useState(new Map(existingRecommendation != null ? existingRecommendation.triggerProductIds.map(id => [id, shopifyProducts.find(product => product.id === id).title]) : []));
-  const [recommendedProducts, setRecommendedProducts] = useState(new Map(existingRecommendation != null ? existingRecommendation.recommendedProductIds.map(id => [id, shopifyProducts.find(product => product.id === id).title]) : []));
-  const [error, setError] = useState('');
-  const actionData = useActionData();
-  const [isSpecific, setIsSpecific] = useState(existingRecommendation ? (existingRecommendation.triggerProductIds.length === shopifyProducts.length ? 'all' : 'specific') : '');
-  // 
-  const [selectedOption, setSelectedOption] = useState(existingRecommendation ? (existingRecommendation.triggerProductIds.length === shopifyProducts.length ? 'all' : 'specific') : '');
   const submit = useSubmit();
+  const actionData = useActionData();
 
-
-
-
+  const [formState, setFormState] = useState({
+    priority: existingRecommendation ? existingRecommendation.priority : null,
+    isEnabled: existingRecommendation ? (existingRecommendation.isEnabled === 'true' || existingRecommendation.isEnabled === true) : false,
+    recommendationName: existingRecommendation ? existingRecommendation.title : '',
+    triggerProducts: new Map(existingRecommendation ? existingRecommendation.triggerProductIds.map(id => [id, shopifyProducts.find(product => product.id === id).title]) : []),
+    recommendedProducts: new Map(existingRecommendation ? existingRecommendation.recommendedProductIds.map(id => [id, shopifyProducts.find(product => product.id === id).title]) : []),
+    type: existingRecommendation ? (existingRecommendation.triggerProductIds.length === shopifyProducts.length ? 'all' : 'specific') : '',
+    selectedOptions: existingRecommendation ? (existingRecommendation.triggerProductIds.length === shopifyProducts.length ? 'all' : 'specific') : '',
+    errors: {
+      titleError: '',
+      priorityError: '',
+      triggerProductsError: '',
+      recommendedProductsError: '',
+    },
+  });
 
   useEffect(() => {
-    if (actionData && actionData.success) {
-      shopify.toast.show('Product saved', {
-        duration: 2000,
-      });
-      navigate('../');
-    } else if (actionData && actionData.error) {
-      setError(actionData.error);
+    if (actionData) {
+      if (actionData.error) {
+        console.error('Error saving recommendation:', actionData.error);
+      } else if (actionData.success) {
+        shopify.toast.show('Product saved', {
+          duration: 2000,
+        });
+        setTimeout(() => {
+          navigate(`/app/recommendation/${actionData.recommendationId}?shop=${actionData.shop}`);
+        }, 2000);
+      }
     }
   }, [actionData, navigate]);
 
+  const handleChange = (field, value) => {
+    setFormState((prevState) => ({
+      ...prevState,
+      [field]: value,
+    }));
+  };
+
+  const handleErrorChange = (field, value) => {
+    setFormState((prevState) => ({
+      ...prevState,
+      errors: {
+        ...prevState.errors,
+        [field]: value,
+      },
+    }));
+  };
+
   const handleTriggerSelect = async () => {
-    const t1 = Array.from(triggerProducts.keys());
-    const transformedTriggerIds = t1.map(id => ({ id }));
+    const transformedTriggerIds = Array.from(formState.triggerProducts.keys()).map(id => ({ id }));
     const selected = await shopify.resourcePicker({
       type: 'product',
-      showVariants: false,
       multiple: true,
-      selectionIds: transformedTriggerIds
+      selectionIds: transformedTriggerIds,
+      filter: {
+        variants: false,
+      },
     });
 
     const selectedProductMap = new Map();
@@ -167,17 +182,18 @@ function MultiselectTagComboboxExample() {
       selectedProductMap.set(product.id, product.title);
     });
 
-    setTriggerProducts(selectedProductMap);
+    handleChange('triggerProducts', selectedProductMap);
   };
 
   const handleRecommendSelect = async () => {
-    const t = Array.from(recommendedProducts.keys());
-    const transformedRecommendIds = t.map(id => ({ id }));
+    const transformedRecommendIds = Array.from(formState.recommendedProducts.keys()).map(id => ({ id }));
     const selected = await shopify.resourcePicker({
       type: 'product',
-      showVariants: false,
       multiple: true,
-      selectionIds: transformedRecommendIds
+      selectionIds: transformedRecommendIds,
+      filter: {
+        variants: false,
+      },
     });
 
     const selectedRecommendationMap = new Map();
@@ -185,187 +201,237 @@ function MultiselectTagComboboxExample() {
       selectedRecommendationMap.set(product.id, product.title);
     });
 
-    setRecommendedProducts(selectedRecommendationMap);
+    handleChange('recommendedProducts', selectedRecommendationMap);
   };
 
+
+  const validateForm = (formState) => {
+    const errors = {
+      titleError: '',
+      priorityError: '',
+      triggerProductsError: '',
+      recommendedProductsError: ''
+    };
+
+    let isValid = true;
+
+    if (!formState.recommendationName.trim()) {
+      errors.titleError = 'Title is required';
+      isValid = false;
+    }
+    if (formState.priority == null || formState.priority <= 0) {
+      errors.priorityError = 'Priority must be greater than 0';
+      isValid = false;
+    }
+    if (formState.triggerProducts.size === 0 && formState.type!='all') {
+      errors.triggerProductsError = 'At least one trigger product must be selected';
+      isValid = false;
+    }
+    if (formState.recommendedProducts.size === 0) {
+      errors.recommendedProductsError = 'At least one recommendation product must be selected';
+      isValid = false;
+    }
+
+    return { isValid, errors };
+  };
+
+
   const handleSave = () => {
-    if (!recommendationName.trim()) {
-      setError('Title is required');
-      return;
-    }
-    if (priority <= 0) {
-      setError('Priority must be greater than 0');
-      return;
-    }
-    if (triggerProducts.size === 0) {
-      setError('At least one trigger product must be selected');
-      return;
-    }
-    if (recommendedProducts.size === 0) {
-      setError('At least one recommendation product must be selected');
+    const { isValid, errors } = validateForm(formState);
+    handleErrorChange('titleError', errors.titleError);
+    handleErrorChange('priorityError', errors.priorityError);
+    handleErrorChange('triggerProductsError', errors.triggerProductsError);
+    handleErrorChange('recommendedProductsError', errors.recommendedProductsError);
+
+    if (!isValid) {
       return;
     }
 
     const formData = new FormData();
-    triggerProducts.forEach((title, id) => {
+    formState.triggerProducts.forEach((title, id) => {
       formData.append('selectedProducts', JSON.stringify([id, title]));
     });
-    recommendedProducts.forEach((title, id) => {
+
+    formState.recommendedProducts.forEach((title, id) => {
       formData.append('selectedRecommendations', JSON.stringify([id, title]));
     });
-    formData.append('title', recommendationName);
-    formData.append('priority', priority);
-    formData.append('isEnabled', isEnabled.toString());
-    formData.append('shop', shop)
-
+    formData.append('title', formState.recommendationName);
+    formData.append('priority', formState.priority);
+    formData.append('isEnabled', formState.isEnabled.toString());
+    formData.append('shop', shop);
+    formData.append('isAll',formState.type=='all'?true:false);
 
     submit(formData, { method: 'post' });
   };
 
   const handleAllProducts = async () => {
-    const productsMap = new Map(shopifyProducts.map(product => [product.id, product.title]));
-    setTriggerProducts(productsMap);
+    handleChange('triggerProducts',new Map());
+    handleChange('type', 'all');
+    // const productsMap = new Map(shopifyProducts.map(product => [product.id, product.title]));
+    // handleChange('triggerProducts', productsMap);
   };
 
   const handleOptionChange = (value) => {
-    setSelectedOption(value);
+    handleChange('selectedOptions', value);
     if (value === 'all') {
-      setIsSpecific('all');
+      handleChange('type', 'all');
       handleAllProducts();
     } else {
-      setTriggerProducts(new Map());
-      setIsSpecific('specific');
+      handleChange('triggerProducts', new Map());
+      handleChange('type', 'specific');
     }
   };
 
-  const removeTag = (tag) => {
+  const removeTag = (type, tag) => {
     return () => {
-      setRecommendedProducts((previousTags) => {
-        const updatedTags = new Map(previousTags);
+      setFormState((prevState) => {
+        const updatedTags = new Map(prevState[type]);
         updatedTags.delete(tag);
-        return updatedTags;
+        return {
+          ...prevState,
+          [type]: updatedTags,
+        };
       });
     };
   };
 
-  const removeTag1 = (tag) => {
-    return () => {
-      setTriggerProducts((previousTags) => {
-        const updatedTags = new Map(previousTags);
-        updatedTags.delete(tag);
-        return updatedTags;
+  const handleDelete = async () => {
+    const id = existingRecommendation.offerId;
+    try {
+      await fetch(`http://localhost:3004/recommendation?offerId=${id}&shop=${shop}`, {
+        method: 'DELETE',
+      })
+      shopify.toast.show('Offer deleted ', {
+        duration: 2000,
       });
-    };
-  };
+      navigate('../');
+    }
+    catch (err) {
+      console.log("Error", err);
+      shopify.toast.show('Failed to delete offer', {
+        duration: 2000,
+      });
+    }
+  }
 
   return (
     <Page
       backAction={{ content: "Offer", url: '/app' }}
-      title={existingRecommendation ? `Editing ${recommendationName}` : 'Add Offer'}
-      secondaryActions={[{
-        content: "Save",
+      title={existingRecommendation ? `Editing ${formState.recommendationName}` : 'Add Offer'}
+      primaryAction={{
+        content: 'Save',
         onAction: handleSave,
-      }]}
+      }}
+      secondaryActions={[
+        ...(existingRecommendation ? [{
+          content: "Delete",
+          destructive: true,
+          onAction: handleDelete,
+
+        }] : [])
+      ]}
     >
-      <Layout>
-        <Layout.Section>
-          <Card>
-            <div style={{ marginBottom: '10px' }}>
-              <label><b>Title</b></label>
-            </div>
-            <TextField
-              placeholder="Example Title"
-              value={recommendationName}
-              onChange={setRecommendationName}
-              autoComplete='off'
-              error={error && !recommendationName.trim() ? error : null}
-            />
-            <div style={{ margin: '10px 0' }}>
-              <label><b>Priority</b></label>
-            </div>
-            <TextField
-              placeholder="1"
-              type="number"
-              value={priority || ''}
-              onChange={setPriority}
-              autoComplete='off'
-              error={error && priority <= 0 ? error : null}
-            />
-          </Card>
-        </Layout.Section>
-
-        <Layout.Section oneThird>
-          <Card>
-            <Label><b>Status</b></Label>
-            <Checkbox
-              label="Enable"
-              checked={isEnabled}
-              onChange={() => setIsEnabled(!isEnabled)}
-            />
-          </Card>
-        </Layout.Section>
-
-        <Layout.Section>
-          <Card>
-            <div style={{ marginBottom: '10px' }}>
-              <label><b>Trigger Products</b></label>
-            </div>
-            <div style={{ margin: '10px 0' }}>
-              <RadioButton
-                label="All Products"
-                checked={selectedOption === 'all'}
-                onChange={() => handleOptionChange('all')}
-              />
-            </div>
-            <div style={{ margin: '10px 0' }}>
-              <RadioButton
-                label="Specific Products"
-                checked={selectedOption === 'specific'}
-                onChange={() => handleOptionChange('specific')}
-              />
-            </div>
-            {isSpecific === 'specific' ?
-              (<div>
-                <Button onClick={handleTriggerSelect}>Select Product</Button>
-                <p style={{ color: 'gray', marginTop: '10px' }}>*The offer will be applied for selected products</p>
-                <div style={{ display: 'flex', margin: '10px 0px', gap: '10px' }}>
-                  {Array.from(triggerProducts.keys()).map((key) => (
-                    <div key={key}>
-                      <Tag onRemove={removeTag1(key)}>{triggerProducts.get(key)}</Tag>
-                    </div>
-                  ))}
-                </div>
-              </div>) : isSpecific === 'all' ?
-                (<p style={{ color: 'gray', marginLeft: '10px' }}>*The offer will be applied for all products</p>)
-                : (<p></p>)
-            }
-          </Card>
-        </Layout.Section>
-
-        <Layout.Section>
-          <Card>
-            <div style={{ marginBottom: '10px' }}>
-              <label><b>Recommended Products</b></label>
-            </div>
-            <Button onClick={handleRecommendSelect}>Choose Products</Button>
-            <div style={{ display: 'flex', margin: '10px 0px', gap: '10px' }}>
-              {Array.from(recommendedProducts.keys()).map((key) => (
-                <div key={key}>
-                  <Tag onRemove={removeTag(key)}>{recommendedProducts.get(key)}</Tag>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Layout.Section>
-
-        {error && (
+      <div style={{ marginBottom: '20px' }}>
+        <Layout>
           <Layout.Section>
-            <Card sectioned title="Error">
-              <p>{error}</p>
+            <Card>
+              <div style={{ marginBottom: '10px' }}>
+                <label><b>Title</b></label>
+              </div>
+              <TextField
+                placeholder="Example Title"
+                value={formState.recommendationName}
+                onChange={(value) => handleChange('recommendationName', value)}
+                autoComplete='off'
+                error={formState.errors.titleError}
+              />
             </Card>
           </Layout.Section>
-        )}
-      </Layout>
+
+          <Layout.Section oneThird>
+            <Card>
+              <Label><b>Status</b></Label>
+              <Checkbox
+                label="Enable"
+                checked={formState.isEnabled}
+                onChange={() => handleChange('isEnabled', !formState.isEnabled)}
+              />
+            </Card>
+          </Layout.Section>
+
+          <Layout.Section>
+            <Card>
+              <div style={{ marginBottom: '10px' }}>
+                <label><b>Priority</b></label>
+              </div>
+              <TextField
+                placeholder="1"
+                type="number"
+                value={formState.priority || ''}
+                onChange={(value) => handleChange('priority', value)}
+                autoComplete='off'
+                error={formState.errors.priorityError}
+              />
+            </Card>
+          </Layout.Section>
+
+          <Layout.Section>
+            <Card>
+              <div style={{ marginBottom: '10px' }}>
+                <label><b>Trigger Products</b></label>
+              </div>
+              <div style={{ margin: '10px 0' }}>
+                <RadioButton
+                  label="All Products"
+                  checked={formState.selectedOptions === 'all'}
+                  onChange={() => handleOptionChange('all')}
+                />
+              </div>
+              <div style={{ margin: '10px 0' }}>
+                <RadioButton
+                  label="Specific Products"
+                  checked={formState.selectedOptions === 'specific'}
+                  onChange={() => handleOptionChange('specific')}
+                />
+              </div>
+              {formState.type === 'specific' ?
+                (<div>
+                  <Button onClick={handleTriggerSelect}>Select Product</Button>
+                  <p style={{ color: 'gray', marginTop: '10px' }}>*The offer will be applied for selected products</p>
+                  <div style={{ display: 'flex', margin: '10px 0px', gap: '10px' }}>
+                    {Array.from(formState.triggerProducts.keys()).map((key) => (
+                      <div key={key}>
+                        <Tag onRemove={removeTag('triggerProducts', key)}>{formState.triggerProducts.get(key)}</Tag>
+                      </div>
+                    ))}
+                  </div>
+                </div>)
+                : formState.type === 'all' ?
+                  (<p style={{ color: 'gray', marginTop: '10px' }}>*The offer will be applied for all products</p>) : (<p></p>)
+              }
+              {formState.errors.triggerProductsError && <p style={{ color: 'red' }}>{formState.errors.triggerProductsError}</p>}
+            </Card>
+          </Layout.Section>
+
+          <Layout.Section>
+            <Card>
+              <div style={{ marginBottom: '10px' }}>
+                <label><b>Recommended Products</b></label>
+              </div>
+              <Button onClick={handleRecommendSelect}>Select Product</Button>
+              <p style={{ color: 'gray', marginTop: '10px' }}>*Recommended products will be suggested to the user</p>
+              <div style={{ display: 'flex', margin: '10px 0px', gap: '10px' }}>
+                {Array.from(formState.recommendedProducts.keys()).map((key) => (
+                  <div key={key}>
+                    <Tag onRemove={removeTag('recommendedProducts', key)}>{formState.recommendedProducts.get(key)}</Tag>
+                  </div>
+                ))}
+              </div>
+              {formState.errors.recommendedProductsError && <p style={{ color: 'red' }}>{formState.errors.recommendedProductsError}</p>}
+            </Card>
+          </Layout.Section>
+        </Layout>
+      </div>
     </Page>
   );
 }

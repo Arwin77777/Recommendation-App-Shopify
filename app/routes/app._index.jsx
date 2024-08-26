@@ -1,6 +1,6 @@
 import { Button, IndexTable, LegacyCard, Link, Page, Text, useIndexResourceState } from '@shopify/polaris';
 import React, { useEffect, useState } from 'react';
-import { fetchProducts } from '../server/dbUtil';
+import { fetchAllProducts } from '../server/dbUtil';
 import { useLoaderData, useNavigate } from '@remix-run/react';
 import { EditIcon } from '@shopify/polaris-icons';
 
@@ -8,43 +8,50 @@ export async function loader({ request }) {
     try {
         const url = new URL(request.url);
         const shop = url.searchParams.get("shop");
-        const response = await fetchProducts();
-        return { orders: response.data, shop: shop };
+        console.log("In loader",url);
+        const response = await fetchAllProducts();
+        return { offers: response.data, shop: shop };
     } catch (err) {
-        
-        return { orders: [], error: 'Failed to fetch data' };
+        return { offers: [], error: 'Failed to fetch data' };
     }
 }
 
 const Table = () => {
+
     const navigate = useNavigate();
-    const { orders, error, shop: loaderShop } = useLoaderData();
-    const shop = loaderShop || localStorage.getItem("shop");
+    const { offers, error, shop: loaderShop } = useLoaderData();
+    const [shop, setShop] = useState(loaderShop || '');
 
+    useEffect(() => {
+        if (loaderShop) {
+            localStorage.setItem("shop", loaderShop);
+            setShop(loaderShop);
+        } else {
+            const storedShop = localStorage.getItem("shop");
+            if (storedShop) {
+                setShop(storedShop);
+            }
+        }
+    }, [loaderShop]);
 
-    const [renamedOrders, setRenamedOrders] = useState(
-        orders.map(({ offerId, ...rest }) => ({
+    const [renamedOffers, setRenamedOffers] = useState(
+        offers.map(({ offerId, ...rest }) => ({
             id: offerId,
             ...rest
         }))
     );
 
-    const { clearSelection, selectedResources, allResourcesSelected, handleSelectionChange } = useIndexResourceState(renamedOrders || []);
+    const { clearSelection, selectedResources, allResourcesSelected, handleSelectionChange } = useIndexResourceState(renamedOffers || []);
 
-    useEffect(() => {
-        if (shop) {
-            
-            localStorage.setItem("shop", shop);
-        }
-    }, [shop]);
+    
 
     if (error) {
         return <div>Error: {error}</div>;
     }
 
     const resourceName = {
-        singular: 'order',
-        plural: 'orders',
+        singular: 'Offer',
+        plural: 'Offers',
     };
 
     const handleDeleteSelected = async () => {
@@ -56,51 +63,52 @@ const Table = () => {
                     })
                 )
             );
-            setRenamedOrders((prevOrders) =>
-                prevOrders.filter((order) => !selectedResources.includes(order.id))
+            setRenamedOffers((prevOffers) =>
+                prevOffers.filter((offer) => !selectedResources.includes(offer.id))
             );
             clearSelection();
-            // Show success message using Shopify's toast or any other toast library
-            
+
         } catch (err) {
             console.error('Failed to delete offers:', err);
-            // Show an error message
-            
+
         }
     };
 
-    const rowMarkup = (renamedOrders || []).map(
-        ({ id, title, priority, isEnabled }, index) => (
-            <IndexTable.Row
-                id={id}
-                key={id}
-                selected={selectedResources.includes(id)}
-                position={index}
-            >
-                <IndexTable.Cell>
-                    <Text variant="bodyMd" fontWeight="bold" as="span">
-                        {title}
-                    </Text>
-                </IndexTable.Cell>
-                <IndexTable.Cell>{priority}</IndexTable.Cell>
-                <IndexTable.Cell>
-                    {isEnabled === true || isEnabled === 'true' ? 'Active' : 'Inactive'}
-                </IndexTable.Cell>
-                <IndexTable.Cell>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                        <Link
-                            url={`./recommendation/${id}?shop=${shop}`}
-                            onClick={(event) => {
-                                event.stopPropagation();
-                            }}
-                        >
-                            <Button icon={EditIcon} />
-                        </Link>
-                    </div>
-                </IndexTable.Cell>
-            </IndexTable.Row>
-        ),
-    );
+    const rowMarkup = (renamedOffers || []).map(
+        ({ id, title, priority, isEnabled }, index) => {
+            return (
+                <IndexTable.Row
+                    id={id}
+                    key={id}
+                    selected={selectedResources.includes(id)}
+                    position={index}
+                >
+                    <IndexTable.Cell>
+                        <Text variant="bodyMd" fontWeight="bold" as="span">
+                            {title}
+                        </Text>
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>{priority}</IndexTable.Cell>
+                    <IndexTable.Cell>
+                        {isEnabled === true || isEnabled === 'true' ? 'Active' : 'Inactive'}
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <Link
+                                url={`./recommendation/${id}?shop=${shop}`}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                }}
+                            >
+                                <Button icon={EditIcon} />
+                            </Link>
+                        </div>
+                    </IndexTable.Cell>
+                </IndexTable.Row>
+            );
+        }  
+    ); 
+    
 
     return (
         <Page
@@ -116,7 +124,7 @@ const Table = () => {
                 <LegacyCard>
                     <IndexTable
                         resourceName={resourceName}
-                        itemCount={(renamedOrders || []).length}
+                        itemCount={(renamedOffers || []).length}
                         selectedItemsCount={
                             allResourcesSelected ? 'All' : selectedResources.length
                         }

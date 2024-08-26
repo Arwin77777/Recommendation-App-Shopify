@@ -1,131 +1,83 @@
-import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { DynamoDBClient, QueryCommand } from "@aws-sdk/client-dynamodb";
+import {
+  fetchProducts,
+  addRecommendation,
+  getRecommendation,
+  deleteRecommendation,
+  updateRecommendation,
+  getRecommendations
+} from './dynamoJs.js';
 
-
-
-
-const client = new DynamoDBClient({
-  region: "us-west-2",
-  accessKeyId: 'a',
-  secretAccessKey: 'a',
-  endpoint: "http://localhost:8000"
-});
-
-const docClient = DynamoDBDocumentClient.from(client);
-
-export const fetchProducts = async () => {
+export const fetchAllProducts = async () => {
   const params = {
     TableName: 'UpsellOffers'
   };
-
-  try {
-    const command = new ScanCommand(params);
-    const data = await docClient.send(command);
-    return { success: true, data: data.Items };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  return await fetchProducts(params);
 };
 
-export const addRecommendation = async (offerId, triggerProductIds, recommendedProductIds, isEnabled, title, priority, createdAt, updatedAt, shop) => {
-
-  const command = new PutCommand({
+export const createNewRecommendation = async (offerId, triggerProductIds, recommendedProductIds, isEnabled, title, priority, createdAt, updatedAt, shop,isAll) => {
+  const params = {
     TableName: "UpsellOffers",
     Item: {
       myShopifyDomain: shop,
-      offerId: offerId,
-      triggerProductIds: triggerProductIds,
-      recommendedProductIds: recommendedProductIds,
-      isEnabled: isEnabled,
-      title: title,
-      priority: priority,
-      createdAt: createdAt,
-      updatedAt: ''
+      offerId,
+      triggerProductIds,
+      recommendedProductIds,
+      isEnabled,
+      title,
+      priority,
+      createdAt,
+      updatedAt: '',
+      isAll
     },
-  });
-
-  // 
-  const response = await docClient.send(command);
-  return response;
+  };
+  return await addRecommendation(params);
 };
 
-export const getRecommendation = async (offerId, shop) => {
-
-  const command = new GetCommand({
+export const fetchRecommendation = async (offerId, shop) => {
+  const params = {
     TableName: "UpsellOffers",
-    Key: { myShopifyDomain: shop, offerId },
-  });
-
-  const response = await docClient.send(command);
-
-  if (response.Item) {
-    return response.Item;
-  }
-  return [];
+    Key: { myShopifyDomain: shop, offerId }
+  };
+  return await getRecommendation(params);
 };
 
+export const removeRecommendation = async (offerId, shop) => {
+  const params = {
+    TableName: "UpsellOffers",
+    Key: { myShopifyDomain: shop, offerId }
+  };
+  return await deleteRecommendation(params);
+};
 
-export async function deleteRecommendation(offerId, shop) {
+export const modifyRecommendation = async (recommendation) => {
+  const { offerId, triggerProductIds, title, priority, recommendedProductIds, isEnabled, updatedAt, shop,isAll } = recommendation;
 
-  const command = new DeleteCommand({
+  const params = {
     TableName: "UpsellOffers",
     Key: { myShopifyDomain: shop, offerId },
-  });
-  const response = await docClient.send(command);
-  return response;
-}
-
-
-export const updateRecommendation = async (recommendation) => {
-  const { offerId, triggerProductIds, title, priority, recommendedProductIds, isEnabled, updatedAt, shop } = recommendation;
-
-
-  const command = new UpdateCommand({
-    TableName: "UpsellOffers",
-    Key: { myShopifyDomain: shop, offerId },
-    UpdateExpression: "set triggerProductIds = :triggerProductIds, title = :title, priority = :priority, recommendedProductIds = :recommendedProductIds, isEnabled = :isEnabled,updatedAt=:updatedAt",
+    UpdateExpression: "set triggerProductIds = :triggerProductIds, title = :title, priority = :priority, recommendedProductIds = :recommendedProductIds, isEnabled = :isEnabled, updatedAt=:updatedAt ,isAll=:isAll",
     ExpressionAttributeValues: {
       ":triggerProductIds": triggerProductIds,
       ":title": title,
       ":priority": priority,
       ":recommendedProductIds": recommendedProductIds,
       ":isEnabled": isEnabled,
-      ":updatedAt": updatedAt
+      ":updatedAt": updatedAt,
+      ":isAll": isAll
     },
     ReturnValues: "ALL_NEW"
-  });
+  };
 
-  try {
-    const response = await docClient.send(command);
-
-    return response.Attributes;
-  } catch (error) {
-    console.error('Update failed:', error);
-    throw error;
-  }
+  return await updateRecommendation(params);
 };
 
-export const getRecommendations = async () => {
-  const command = new QueryCommand({
+export const fetchAllRecommendations = async (shopDomain) => {
+  const params = {
     TableName: "UpsellOffers",
     KeyConditionExpression: "myShopifyDomain=:m",
     ExpressionAttributeValues: {
-      ":m": { S: "arwin-lb.myshopify.com" }
+      ":m": { S: shopDomain }
     }
-  });
-
-  try {
-
-    const response = await docClient.send(command);
-
-    if (response.Items) {
-      return response.Items;
-    } else {
-
-      return [];
-    }
-  } catch (err) {
-    console.error("Error in fetching all the offers", err);
-    return [];
-  }
+  };
+  return await getRecommendations(params);
 };

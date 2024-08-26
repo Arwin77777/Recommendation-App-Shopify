@@ -3,7 +3,7 @@
 client_id = "a8f8c6bc53c06dbf54fad4f3908f9974"
 name = "recommendation-app"
 handle = "recommendation-app-9"
-application_url = "https://killer-variety-matt-frankfurt.trycloudflare.com"
+application_url = "https://babes-elvis-desktop-catalyst.trycloudflare.com"
 embedded = true
 
 [build]
@@ -17,9 +17,9 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://killer-variety-matt-frankfurt.trycloudflare.com/auth/callback",
-  "https://killer-variety-matt-frankfurt.trycloudflare.com/auth/shopify/callback",
-  "https://killer-variety-matt-frankfurt.trycloudflare.com/api/auth/callback"
+  "https://babes-elvis-desktop-catalyst.trycloudflare.com/auth/callback",
+  "https://babes-elvis-desktop-catalyst.trycloudflare.com/auth/shopify/callback",
+  "https://babes-elvis-desktop-catalyst.trycloudflare.com/api/auth/callback"
 ]
 
 [webhooks]
